@@ -1,9 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetClient } from '@cims/api-client';
 import { renderWithProviders, signedInState } from '../../test/renderWithProviders';
 import { installMockApi, type MockCall, type MockHandler } from '../../test/mockApi';
+import { mockViewportWidth } from '../../test/matchMedia';
 import type { Country } from '../../services/masterDataApi';
 import type { Supplier } from '../../services/supplierApi';
 import { SupplierPage } from './SupplierPage';
@@ -76,6 +77,7 @@ let saveReply: MockHandler = () => ({
   data: { supplierCode: 'Z0001', message: 'Data Saved Successfully' },
 });
 let freightUnavailable = false;
+let restoreViewport: () => void = () => undefined;
 
 function setup(extra: MockHandler = () => undefined) {
   calls = installMockApi((call) => {
@@ -143,108 +145,112 @@ afterEach(() => {
   });
 });
 
-const field = (label: string) => screen.getByRole('textbox', { name: label });
+const field = (label: RegExp) => screen.getByRole('textbox', { name: label });
 const save = () => screen.getByRole('button', { name: 'Save' });
-const byId = (id: string) => document.getElementById(id) as HTMLInputElement;
+const findList = () => screen.findByRole('list', { name: 'Suppliers' });
+const writes = () => calls.filter((c) => c.method === 'POST' || c.method === 'PUT');
 
-async function chooseOption(user: ReturnType<typeof userEvent.setup>, option: string) {
-  await user.click(screen.getByRole('combobox', { name: 'Option' }));
-  await user.click(await screen.findByRole('option', { name: option }));
+async function startNew(user: ReturnType<typeof userEvent.setup>) {
+  await within(await findList()).findByRole('button', { name: /SPEEDMARK/ });
+  await user.click(screen.getAllByRole('button', { name: 'New supplier' })[0]);
+  return screen.findByRole('region', { name: 'New supplier' });
 }
 
-async function pickFromDialog(
+async function openSupplier(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await within(await findList()).findByRole('button', { name: new RegExp(name) }));
+  await waitFor(() => expect(field(/Supplier name/)).toHaveValue(name));
+}
+
+async function pick(
   user: ReturnType<typeof userEvent.setup>,
-  buttonId: string,
+  button: string,
   title: string,
   rowText: string,
 ) {
-  await user.click(byId(buttonId));
+  await user.click(screen.getByRole('button', { name: button }));
   const dialog = await screen.findByRole('dialog', { name: title });
   const row = within(dialog).getByText(rowText).closest('[role="row"]') as HTMLElement;
   await user.click(within(row).getByRole('button', { name: 'Select' }));
 }
 
 describe('SupplierPage', () => {
-  it('shows the legacy fields in order with their labels and ids and sends nothing on load', () => {
+  beforeEach(() => {
+    restoreViewport = mockViewportWidth(1440);
+  });
+  afterEach(() => restoreViewport());
+
+  it('lists the suppliers next to an empty detail and reads only the list on load', async () => {
     setup();
 
-    expect(screen.getByRole('heading', { name: 'Suppliers Master Details' })).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Option' })).toHaveTextContent('New');
-    const inOrder = [
-      screen.getByRole('combobox', { name: 'Option' }),
-      field('Supplier Code'),
-      field('Supplier Name'),
-      screen.getByText('Address Details'),
-      field('Country'),
-      field('Country Name'),
-      field('Address Line1'),
-      field('Address Line2'),
-      field('Address Line3'),
-      field('Address Line4'),
-      screen.getByText('Contact Number Details'),
-      field('Telephone No'),
-      field('Fax No'),
-      field('Email Address'),
-      screen.getByText('Contact Person Details'),
-      field('Contact Person 1'),
-      field('Contact Person 2'),
-      field('Contact Person 3'),
-      field('Shipper Code [SFOS]'),
-      field('Shipper Name [SFOS]'),
-      field('Shipper Code [AFOS]'),
-      field('Shipper Name [AFOS]'),
-      field('Shipper Code[LIMA]'),
-      field('REX No'),
-      save(),
-      screen.getByRole('button', { name: 'New' }),
-      screen.getByRole('button', { name: 'Close' }),
+    expect(screen.getByRole('heading', { level: 1, name: 'Suppliers' })).toBeInTheDocument();
+    const items = within(await findList()).getAllByRole('button');
+    expect(items.map((i) => i.textContent)).toEqual([
+      'ACS LOGISTICS LTDA0001 · IND · No 1 Road',
+      'SPEEDMARK LOGISTICSS0001 · VN · Line one',
+      'SAMS ATTIRES0002 · IND',
+    ]);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`GET ${BASE}`]);
+  });
+
+  it('starts a new supplier with the code to be assigned, sections in order and the cursor in the name', async () => {
+    const user = userEvent.setup();
+    setup();
+    const panel = await startNew(user);
+
+    expect(field(/Supplier code/)).toHaveAccessibleDescription(
+      'Assigned when you save: the first letter of the name and the next number.',
+    );
+    expect(field(/Supplier code/)).toHaveAttribute('readonly');
+    await waitFor(() => expect(field(/Supplier name/)).toHaveFocus());
+    const headings = within(panel)
+      .getAllByRole('heading', { level: 3 })
+      .map((h) => h.textContent);
+    expect(headings).toEqual(['Address', 'Contact', 'Codes in other systems']);
+    const ordered = [
+      field(/Supplier name/),
+      field(/^Country/),
+      field(/Address line 1/),
+      field(/Telephone no/),
+      field(/Contact person 3/),
+      field(/Sea shipper/),
+      field(/Air shipper/),
+      field(/LIMA supplier code/),
+      field(/REX no/),
     ];
-    inOrder.slice(1).forEach((el, i) => {
+    ordered.slice(1).forEach((node, i) => {
       expect(
-        inOrder[i].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ordered[i].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    expect(field('Supplier Code')).toHaveAttribute('id', 'SupplierCode');
-    expect(field('Country')).toHaveAttribute('id', 'CountryCode');
-    expect(field('Country Name')).toHaveAttribute('id', 'CountryName');
-    expect(field('Shipper Code [SFOS]')).toHaveAttribute('id', 'SFOSCode');
-    expect(field('Shipper Name [SFOS]')).toHaveAttribute('id', 'SFOSName');
-    expect(field('Shipper Code [AFOS]')).toHaveAttribute('id', 'AFOSCode');
-    expect(field('Shipper Name [AFOS]')).toHaveAttribute('id', 'AFOSName');
-    for (const id of ['btnSupplierCode', 'btnCountryCode', 'btnSFOSCode', 'btnAFOSCode']) {
-      expect(byId(id)).not.toBeNull();
-    }
-    // New: the code is generated by the server, so it cannot be typed; the display fields are read-only
-    expect(field('Supplier Code')).toHaveAttribute('readonly');
-    expect(field('Country')).toHaveAttribute('readonly');
-    expect(field('Shipper Name [SFOS]')).toHaveAttribute('readonly');
-    expect(calls).toHaveLength(0);
   });
 
-  it('asks for the name first with the legacy message and sends nothing', async () => {
+  it('asks for the name first and sends nothing', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
     await user.click(save());
-
-    expect(await screen.findByText('Enter Supplier Name')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-problems')).toHaveTextContent('Enter the supplier name');
     expect(save()).toBeEnabled();
-    expect(calls).toHaveLength(0);
+    expect(calls.filter((c) => c.url !== BASE)).toHaveLength(0);
   });
 
-  it('saves a new supplier with POST, shows the generated code and keeps Save disabled until New', async () => {
+  it('saves a new supplier with POST (no code check first) and shows the generated code', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
-    await user.type(field('Supplier Name'), 'Zeta Textiles');
-    await user.type(field('Address Line1'), '1 Main St');
-    await user.type(field('Telephone No'), '011 1');
-    await user.type(field('Shipper Code[LIMA]'), 'LM9');
-    await pickFromDialog(user, 'btnCountryCode', 'Country Listing', 'VIETNAM');
-    await waitFor(() => expect(field('Country Name')).toHaveValue('VIETNAM'));
+    await user.type(field(/Supplier name/), 'Zeta Textiles');
+    await user.type(field(/Address line 1/), '1 Main St');
+    await user.type(field(/Telephone no/), '011 1');
+    await user.type(field(/LIMA supplier code/), 'LM9');
+    await pick(user, 'Search countries', 'Countries', 'VIETNAM');
+    await waitFor(() => expect(field(/^Country/)).toHaveAccessibleDescription('VIETNAM'));
     await user.click(save());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-result')).toHaveTextContent(
+      'Supplier created with code Z0001.',
+    );
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.url).toBe(BASE);
     expect(post?.body).toEqual({
@@ -267,62 +273,70 @@ describe('SupplierPage', () => {
     });
     // New does not check the code first: the server makes it
     expect(calls.some((c) => c.method === 'GET' && c.url.startsWith(`${BASE}/Z`))).toBe(false);
-    expect(field('Supplier Code')).toHaveValue('Z0001');
-    expect(save()).toBeDisabled();
-
-    await user.click(screen.getByRole('button', { name: 'New' }));
-    expect(save()).toBeEnabled();
-    expect(field('Supplier Code')).toHaveValue('');
-    expect(field('Supplier Name')).toHaveValue('');
-    // the legacy New left the previous country in place
-    expect(field('Country')).toHaveValue('');
-    expect(field('Country Name')).toHaveValue('');
+    expect(field(/Supplier code/)).toHaveValue('Z0001');
+    expect(screen.getByRole('heading', { name: 'Zeta Textiles (Z0001)' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
   });
 
-  it('shows the server message when the save fails and lets the user try again', async () => {
+  it('shows the server message when the save fails and keeps the form editable', async () => {
     const user = userEvent.setup();
     saveReply = () => ({
       status: 400,
       data: { code: 'VALIDATION_FAILED', errors: { ShipperName: ['Too long'] } },
     });
     setup();
+    await startNew(user);
 
-    await user.type(field('Supplier Name'), 'Zeta');
+    await user.type(field(/Supplier name/), 'Zeta');
     await user.click(save());
 
-    expect(await screen.findByText('Data not Saved [Too long]')).toBeInTheDocument();
+    const error = await screen.findByTestId('detail-error');
+    expect(error).toHaveTextContent('Data not saved');
+    expect(error).toHaveTextContent('Too long');
     expect(save()).toBeEnabled();
   });
 
-  it('in Change mode lists the suppliers, loads every field (country, shippers, Lima) and saves them back with PUT', async () => {
+  it('says when no code is left for the first letter (server 409 on a new supplier)', async () => {
+    const user = userEvent.setup();
+    saveReply = () => ({ status: 409, data: { code: 'SUPPLIER_CODE_SEQUENCE_EXHAUSTED' } });
+    setup();
+    await startNew(user);
+
+    await user.type(field(/Supplier name/), 'Zeta');
+    await user.click(save());
+
+    expect(await screen.findByTestId('detail-error')).toHaveTextContent(
+      'No supplier code is free for names starting with “Z”.',
+    );
+  });
+
+  it('opens a supplier with every field (country, shippers, LIMA) and saves them back with PUT', async () => {
     const user = userEvent.setup();
     setup();
 
-    await chooseOption(user, 'Change');
-    expect(field('Supplier Code')).not.toHaveAttribute('readonly'); // typed or picked outside New
-    await pickFromDialog(user, 'btnSupplierCode', 'Supplier Listing', 'SPEEDMARK LOGISTICS');
+    await openSupplier(user, 'SPEEDMARK LOGISTICS');
+    expect(field(/Supplier code/)).toHaveValue('S0001');
+    expect(field(/Address line 1/)).toHaveValue('Line one');
+    expect(field(/Contact person 2/)).toHaveValue('Ms Two');
+    expect(field(/Telephone no/)).toHaveValue('011 222');
+    expect(field(/Fax no/)).toHaveValue('011 333');
+    expect(field(/Email address/)).toHaveValue('a@b.c');
+    expect(field(/LIMA supplier code/)).toHaveValue('LIMA1');
+    expect(field(/REX no/)).toHaveValue('REX9');
+    expect(field(/^Country/)).toHaveValue('VN');
+    await waitFor(() => expect(field(/^Country/)).toHaveAccessibleDescription('VIETNAM'));
+    expect(field(/Sea shipper/)).toHaveValue('SE1');
+    expect(field(/Sea shipper/)).toHaveAccessibleDescription('SEA ONE');
+    expect(field(/Air shipper/)).toHaveValue('AI1');
+    expect(field(/Air shipper/)).toHaveAccessibleDescription('AIR ONE');
+    expect(field(/Supplier name/)).toHaveAttribute('readonly');
 
-    await waitFor(() => expect(field('Supplier Name')).toHaveValue('SPEEDMARK LOGISTICS'));
-    expect(field('Supplier Code')).toHaveValue('S0001');
-    expect(field('Address Line1')).toHaveValue('Line one');
-    expect(field('Contact Person 2')).toHaveValue('Ms Two');
-    expect(field('Telephone No')).toHaveValue('011 222');
-    expect(field('Fax No')).toHaveValue('011 333');
-    expect(field('Email Address')).toHaveValue('a@b.c');
-    expect(field('Shipper Code[LIMA]')).toHaveValue('LIMA1');
-    expect(field('REX No')).toHaveValue('REX9');
-    expect(field('Country')).toHaveValue('VN');
-    await waitFor(() => expect(field('Country Name')).toHaveValue('VIETNAM'));
-    expect(field('Shipper Code [SFOS]')).toHaveValue('SE1');
-    await waitFor(() => expect(field('Shipper Name [SFOS]')).toHaveValue('SEA ONE'));
-    expect(field('Shipper Code [AFOS]')).toHaveValue('AI1');
-    await waitFor(() => expect(field('Shipper Name [AFOS]')).toHaveValue('AIR ONE'));
-
-    await user.clear(field('Supplier Name'));
-    await user.type(field('Supplier Name'), 'SPEEDMARK LOGISTICS 2');
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.clear(field(/Supplier name/));
+    await user.type(field(/Supplier name/), 'SPEEDMARK LOGISTICS 2');
     await user.click(save());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-result')).toHaveTextContent('Supplier S0001 saved.');
     const put = calls.find((c) => c.method === 'PUT');
     expect(put?.url).toBe(`${BASE}/S0001`);
     expect(put?.body).toMatchObject({
@@ -343,140 +357,86 @@ describe('SupplierPage', () => {
   it('refuses a name that does not start with the first character of the code, without saving', async () => {
     const user = userEvent.setup();
     setup();
-
-    await chooseOption(user, 'Change');
-    await pickFromDialog(user, 'btnSupplierCode', 'Supplier Listing', 'ACS LOGISTICS LTD');
-    await waitFor(() => expect(field('Supplier Name')).toHaveValue('ACS LOGISTICS LTD'));
-    await user.clear(field('Supplier Name'));
-    await user.type(field('Supplier Name'), 'BCS LOGISTICS');
+    await openSupplier(user, 'ACS LOGISTICS LTD');
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.clear(field(/Supplier name/));
+    await user.type(field(/Supplier name/), 'XCS LOGISTICS');
     await user.click(save());
 
-    expect(await screen.findByText('Supplier Name should be Starting with A')).toBeInTheDocument();
-    expect(save()).toBeEnabled();
-    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(await screen.findByTestId('save-problems')).toHaveTextContent(
+      'The name must start with “A”, like the code A0001.',
+    );
+    expect(field(/Supplier name/)).toHaveAttribute('aria-invalid', 'true');
+    expect(writes()).toHaveLength(0);
   });
 
-  it('asks for the code in Change mode and says when it does not exist', async () => {
+  it('says when a supplier being changed no longer exists, without saving', async () => {
+    const user = userEvent.setup();
+    let gone = false;
+    setup((call) =>
+      gone && call.method === 'GET' && call.url === `${BASE}/S0002`
+        ? { status: 404, data: { code: 'SUPPLIER_NOT_FOUND' } }
+        : undefined,
+    );
+    await openSupplier(user, 'SAMS ATTIRE');
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.type(field(/Supplier name/), ' 2');
+    gone = true;
+    await user.click(save());
+
+    expect(await screen.findByTestId('detail-error')).toHaveTextContent(
+      'Supplier S0002 no longer exists.',
+    );
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('shows similar names while a new name is typed, narrows them and keeps them after leaving the field', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
-    await chooseOption(user, 'Change');
-    await user.type(field('Supplier Name'), 'Zeta');
-    await user.click(save());
-    expect(await screen.findByText('Enter Supplier Code')).toBeInTheDocument();
-
-    await user.type(field('Supplier Code'), 'Z0009');
+    await user.type(field(/Supplier name/), 'S');
+    const hint = await screen.findByTestId('similar-names');
+    expect(hint).toHaveTextContent('SPEEDMARK LOGISTICS');
+    expect(hint).toHaveTextContent('SAMS ATTIRE');
+    await user.type(field(/Supplier name/), 'PEED');
+    expect(screen.getByTestId('similar-names')).not.toHaveTextContent('SAMS ATTIRE');
     await user.tab();
-    await user.click(save());
-    expect(await screen.findByText('Supplier Code not Exist')).toBeInTheDocument();
-    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
-    expect(save()).toBeEnabled();
+    expect(screen.getByTestId('similar-names')).toHaveTextContent('SPEEDMARK LOGISTICS');
+    await user.clear(field(/Supplier name/));
+    expect(screen.queryByTestId('similar-names')).not.toBeInTheDocument();
   });
 
-  it('loads a typed code on Enter and says "Invalid Code" for an unknown one', async () => {
+  it('picks the sea and air shippers from their lists and shows their names', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
-    await chooseOption(user, 'Change');
-    await user.type(field('Supplier Code'), 'A0001{Enter}');
-    await waitFor(() => expect(field('Supplier Name')).toHaveValue('ACS LOGISTICS LTD'));
-
-    await chooseOption(user, 'Change'); // same option: stays, form kept
-    await user.clear(field('Supplier Code'));
-    await user.type(field('Supplier Code'), 'Q9999{Enter}');
-    expect(await screen.findByText('Invalid Code')).toBeInTheDocument();
+    await pick(user, 'Search sea shippers', 'Sea shippers (SFOS)', 'SEA ONE');
+    await waitFor(() => expect(field(/Sea shipper/)).toHaveAccessibleDescription('SEA ONE'));
+    expect(field(/Sea shipper/)).toHaveValue('SE1');
+    await pick(user, 'Search air shippers', 'Air shippers (AFOS)', 'AIR ONE');
+    await waitFor(() => expect(field(/Air shipper/)).toHaveAccessibleDescription('AIR ONE'));
   });
 
-  it('lists the suppliers in New mode without filling the form', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await pickFromDialog(user, 'btnSupplierCode', 'Supplier Listing', 'ACS LOGISTICS LTD');
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(field('Supplier Code')).toHaveValue('');
-    expect(field('Supplier Name')).toHaveValue('');
-  });
-
-  it('in View mode loads a record, locks the fields and disables Save; New unlocks them', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await chooseOption(user, 'View');
-    expect(save()).toBeDisabled();
-    await pickFromDialog(user, 'btnSupplierCode', 'Supplier Listing', 'ACS LOGISTICS LTD');
-
-    await waitFor(() => expect(field('Supplier Name')).toHaveValue('ACS LOGISTICS LTD'));
-    await waitFor(() => expect(field('Supplier Name')).toHaveAttribute('readonly'));
-    expect(field('Address Line1')).toHaveAttribute('readonly');
-    expect(byId('btnSupplierCode')).toBeDisabled();
-    expect(save()).toBeDisabled();
-
-    await chooseOption(user, 'New');
-    expect(field('Supplier Name')).not.toHaveAttribute('readonly');
-    expect(byId('btnSupplierCode')).toBeEnabled();
-    expect(save()).toBeEnabled();
-  });
-
-  it('shows the pre-entered box while a new name is typed, narrows it and keeps it after leaving the field', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await user.type(field('Supplier Name'), 'S');
-    expect(await screen.findByText('Pre-Entered Supplier Listing')).toBeInTheDocument();
-    const table = document.getElementById('tblPdata') as HTMLElement;
-    expect(within(table).getByText('SPEEDMARK LOGISTICS')).toBeInTheDocument();
-    expect(within(table).getByText('SAMS ATTIRE')).toBeInTheDocument();
-    expect(calls.some((c) => c.url === `${BASE}/search` && c.params?.name === 'S')).toBe(true);
-
-    await user.type(field('Supplier Name'), 'PEED');
-    expect(within(table).getByText('SPEEDMARK LOGISTICS')).toBeInTheDocument();
-    expect(within(table).queryByText('SAMS ATTIRE')).not.toBeInTheDocument();
-
-    await user.tab(); // unlike Country, Ports and DC the Supplier page did not remove the box on blur
-    expect(screen.getByText('Pre-Entered Supplier Listing')).toBeInTheDocument();
-
-    await user.clear(field('Supplier Name'));
-    expect(screen.queryByText('Pre-Entered Supplier Listing')).not.toBeInTheDocument();
-  });
-
-  it('picks the SFOS and AFOS shippers from their dialogs and shows their names', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await pickFromDialog(user, 'btnSFOSCode', 'Sea Shipper Listing', 'SEA ONE');
-    await waitFor(() => expect(field('Shipper Name [SFOS]')).toHaveValue('SEA ONE'));
-    expect(field('Shipper Code [SFOS]')).toHaveValue('SE1');
-
-    await pickFromDialog(user, 'btnAFOSCode', 'Air Shipper Listing', 'AIR ONE');
-    await waitFor(() => expect(field('Shipper Name [AFOS]')).toHaveValue('AIR ONE'));
-    expect(field('Shipper Code [AFOS]')).toHaveValue('AI1');
-  });
-
-  it('says so when the Sea or Air freight system cannot be reached', async () => {
+  it('says so when the sea or air freight system cannot be reached', async () => {
     const user = userEvent.setup();
     freightUnavailable = true;
     setup();
+    await startNew(user);
 
-    await user.click(byId('btnSFOSCode'));
-    expect(await screen.findByText('Sea Shipper Listing is not available')).toBeInTheDocument();
-    await user.click(byId('btnAFOSCode'));
-    expect(await screen.findByText('Air Shipper Listing is not available')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Search sea shippers' }));
+    await waitFor(() =>
+      expect(field(/Sea shipper/)).toHaveAccessibleDescription(
+        'The sea freight system (SFOS) cannot be reached now. Sea shippers cannot be listed.',
+      ),
+    );
+    await user.click(screen.getByRole('button', { name: 'Search air shippers' }));
+    await waitFor(() =>
+      expect(field(/Air shipper/)).toHaveAccessibleDescription(
+        'The air freight system (AFOS) cannot be reached now. Air shippers cannot be listed.',
+      ),
+    );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('lists the suppliers on Enter in New mode, where Select only closes the list', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await user.click(field('Supplier Code'));
-    await user.keyboard('{Enter}');
-    const dialog = await screen.findByRole('dialog', { name: 'Supplier Listing' });
-    const row = within(dialog).getByText('SAMS ATTIRE').closest('[role="row"]') as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'Select' }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(field('Supplier Code')).toHaveValue('');
-    expect(field('Supplier Name')).toHaveValue('');
   });
 });

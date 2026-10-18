@@ -112,7 +112,7 @@ export function PortsPage() {
     setCountryName('');
     const result = await loadPort(code);
     if (!record.isCurrent(request)) return;
-    if (result.data) {
+    if (result.data && !result.error) {
       const values = toForm(result.data);
       record.showRecord(values);
       if (values.countryCode.length !== 0) {
@@ -179,11 +179,12 @@ export function PortsPage() {
       setHits(null);
       setHitFilter('');
     } else if (next.length === 1) {
+      // The letters typed while the answer is on its way narrow it when it arrives.
+      setHitFilter('');
       const request = record.nextRequest();
       void searchNames(next).then((result) => {
         if (!record.isCurrent(request)) return;
         setHits(result.data && result.data.length > 0 ? result.data : null);
-        setHitFilter('');
       });
     } else {
       setHitFilter(next);

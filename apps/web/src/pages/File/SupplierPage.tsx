@@ -1,15 +1,18 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box,
-  LookupDialog,
-  LookupField,
+  FieldGrid,
+  FieldGridItem,
+  formatDmy,
+  FormSection,
+  MasterDataPage,
+  Stack,
+  StatGroup,
   TextInput,
-  useScanFeedback,
-  type InventoryGridColumn,
   type LookupColumn,
+  type ValidationIssue,
 } from '@cims/ui';
-import { useLazyGetCountriesQuery, useLazyGetCountryQuery } from '../../services/masterDataApi';
+import { useLazyGetCountryQuery } from '../../services/masterDataApi';
 import {
   useLazyGetAirShipperQuery,
   useLazyGetAirShippersQuery,
@@ -19,51 +22,23 @@ import {
   useLazyGetSuppliersQuery,
   useLazySearchSuppliersQuery,
   useSaveSupplierMutation,
+  type FreightShipper,
+  type SaveSupplierResult,
   type Supplier,
   type SupplierNameHit,
 } from '../../services/supplierApi';
 import type { ApiQueryError } from '../../services/axiosBaseQuery';
 import { PATHS } from '../../routes/paths';
-import { COUNTRY_COLUMNS } from './masterColumns';
-import {
-  COMMON_MESSAGES,
-  saveFailureText,
-  smartMatches,
-  useEntryFlags,
-  type EntryMessages,
-  type EntryOption,
-} from './masterEntry';
-import { MasterEntryShell } from './MasterEntryShell';
-import { PreEnteredBox } from './PreEnteredBox';
-import { SectionBox } from './SectionBox';
-import { FREIGHT_SHIPPER_COLUMNS, SUPPLIER_COLUMNS } from './supplierColumns';
+import { smartMatches } from './masterEntry';
+import { auditText, MASTER_DATA_CONTEXT, SHARED_MESSAGES } from './masterDataPage';
+import { useMasterList, useMasterRecord } from './useMasterRecord';
+import { FREIGHT_TEXTS, SUPPLIER_MESSAGES as MESSAGES } from './supplierMessages';
+import { CodeLookupField } from './CodeLookupField';
+import { CountryLookupField } from './CountryLookupField';
+import { MasterDetailNotice } from './MasterDetailNotice';
+import { SimilarNamesHint } from './SimilarNamesHint';
 
-/** Legacy texts of AppJs/Supplier.js, word for word. */
-const ENTER_NAME = 'Enter Supplier Name';
-const ENTER_CODE = 'Enter Supplier Code';
-const startWith = (letter: string) => `Supplier Name should be Starting with ${letter}`;
-const MESSAGES: EntryMessages = {
-  // New never checks the code (the server generates it), so this one is only used for a server 409.
-  alreadyExists: 'Supplier Code Already Exist',
-  doesNotExist: 'Supplier Code not Exist',
-  checkFailed: 'Error Loading Supplier Data',
-};
-const SFOS_FAILED = 'Error Loading SFOS Shipper Details';
-const AFOS_FAILED = 'Error Loading AFOS Shipper Details';
-const COUNTRY_FAILED = 'Error Loading Country Details';
-/** Not in the legacy page: its Air/Sea lists were an empty table when the other system was unreachable. */
-const SEA_UNAVAILABLE = 'Sea Shipper Listing is not available';
-const AIR_UNAVAILABLE = 'Air Shipper Listing is not available';
-
-const PRE_ENTERED_COLUMNS: InventoryGridColumn<SupplierNameHit>[] = [
-  { field: 'shipperCode', headerName: 'ShipperCode', width: 130 },
-  { field: 'shipperName', headerName: 'ShipperName', width: 280 },
-  { field: 'shipperAddress1', headerName: 'ShipperAddress1', width: 200 },
-  { field: 'shipperAddress2', headerName: 'ShipperAddress2', width: 200 },
-  { field: 'shipperAddress3', headerName: 'ShipperAddress3', width: 200 },
-  { field: 'shipperAddress4', headerName: 'ShipperAddress4', width: 200 },
-];
-
+/** Everything the save sends (the looked-up names are only shown). */
 interface SupplierForm {
   code: string;
   name: string;
@@ -71,70 +46,92 @@ interface SupplierForm {
   address2: string;
   address3: string;
   address4: string;
-  contact1: string;
-  contact2: string;
-  contact3: string;
+  countryCode: string;
   tel: string;
   fax: string;
   email: string;
+  contact1: string;
+  contact2: string;
+  contact3: string;
+  sfosCode: string;
+  afosCode: string;
   lima: string;
   rex: string;
 }
 
-const EMPTY_FORM: SupplierForm = {
+/** The one default object a new supplier starts from (legacy `btnNewClick`, plus the country: fix U4). */
+const EMPTY: SupplierForm = {
   code: '',
   name: '',
   address1: '',
   address2: '',
   address3: '',
   address4: '',
-  contact1: '',
-  contact2: '',
-  contact3: '',
+  countryCode: '',
   tel: '',
   fax: '',
   email: '',
+  contact1: '',
+  contact2: '',
+  contact3: '',
+  sfosCode: '',
+  afosCode: '',
   lima: '',
   rex: '',
 };
 
-interface ListDialogState {
-  title: string;
-  columns: readonly LookupColumn[];
-  rows: readonly object[];
-  onPick: (row: object) => void;
-}
+/** Legacy `LoadSupplierData`, with the country and the Lima code it forgot (U1). */
+const toForm = (s: Supplier): SupplierForm => ({
+  code: s.shipperCode,
+  name: s.shipperName,
+  address1: s.shipperAddress1,
+  address2: s.shipperAddress2,
+  address3: s.shipperAddress3,
+  address4: s.shipperAddress4,
+  countryCode: s.countryCode ?? '',
+  tel: s.shipperTel,
+  fax: s.shipperFax,
+  email: s.shipperEmail,
+  contact1: s.shipperContact1,
+  contact2: s.shipperContact2,
+  contact3: s.shipperContact3,
+  sfosCode: s.shipperCodeSea,
+  afosCode: s.shipperCodeAir,
+  lima: s.limaSupplierCode,
+  rex: s.rexNo,
+});
 
-type FreightKind = 'sea' | 'air';
+interface Names {
+  country: string;
+  sea: string;
+  air: string;
+}
+const NO_NAMES: Names = { country: '', sea: '', air: '' };
+
+const FREIGHT_COLUMNS: readonly LookupColumn[] = [
+  { field: 'shCode', headerName: 'Shipper code', width: 130 },
+  { field: 'shName', headerName: 'Shipper name', width: 280 },
+  { field: 'shAdd1', headerName: 'Address', width: 240 },
+];
+
+/** Plain text fields with their API limit (the stored-procedure parameter sizes, docs/16 A.4). */
+type TextKey = Exclude<keyof SupplierForm, 'code' | 'countryCode' | 'sfosCode' | 'afosCode'>;
+
+const fmt = (date: string) => formatDmy(date, true);
 
 /**
- * Suppliers Master Details (legacy /File/Supplier, CloudMenu 100.04). Same field order, labels, element ids
- * (SupplierCode, btnSupplierCode, CountryCode, btnCountryCode, CountryName, SFOSCode, btnSFOSCode, SFOSName, AFOSCode,
- * btnAFOSCode, AFOSName), messages and flow as Views/File/Supplier.cshtml + AppJs/Supplier.js; write-up in the legacy repo
- * docs/16-wave1-masterdata-b.md. The supplier code is generated by the server on a New save.
+ * Suppliers (legacy /File/Supplier "Suppliers Master Details", CloudMenu 100.04) on the MasterDataPage template
+ * (docs/19 3.1), following the Countries pattern with a server-generated code. Kept from legacy (docs/16 B): the same
+ * calls and bodies (list; supplier by code on selection and as the existence check before a change only; first-letter
+ * name search for the similar-names hint; the country, sea-shipper and air-shipper lists and look-ups; POST without a
+ * code for a new supplier, which returns the generated code; PUT with every field for a change), the checks in the
+ * legacy order (name; for a change the code and the starting-letter rule), the code never typed for a new supplier.
  */
 export function SupplierPage() {
   const navigate = useNavigate();
-  const feedback = useScanFeedback();
-  const flags = useEntryFlags();
-  const { option, optionRef, allowChange, setAllowChange, saveEnabled, setSaveEnabled } = flags;
-
-  const [form, setForm] = useState<SupplierForm>(EMPTY_FORM);
-  const [countryCode, setCountryCode] = useState('');
-  const [countryName, setCountryName] = useState('');
-  const [sfosCode, setSfosCode] = useState('');
-  const [sfosName, setSfosName] = useState('');
-  const [afosCode, setAfosCode] = useState('');
-  const [afosName, setAfosName] = useState('');
-  const [hits, setHits] = useState<SupplierNameHit[] | null>(null);
-  const [hitFilter, setHitFilter] = useState('');
-  const [dialog, setDialog] = useState<ListDialogState | null>(null);
-  const [busy, setBusy] = useState(false);
-
   const [loadList] = useLazyGetSuppliersQuery();
   const [loadSupplier] = useLazyGetSupplierQuery();
   const [searchNames] = useLazySearchSuppliersQuery();
-  const [loadCountries] = useLazyGetCountriesQuery();
   const [loadCountry] = useLazyGetCountryQuery();
   const [loadSeaShippers] = useLazyGetSeaShippersQuery();
   const [loadSeaShipper] = useLazyGetSeaShipperQuery();
@@ -142,450 +139,374 @@ export function SupplierPage() {
   const [loadAirShipper] = useLazyGetAirShipperQuery();
   const [saveSupplier] = useSaveSupplierMutation();
 
+  const [names, setNames] = useState<Names>(NO_NAMES);
+  const [savedNames, setSavedNames] = useState<Names>(NO_NAMES);
+  const [hits, setHits] = useState<SupplierNameHit[] | null>(null);
+  const [hitFilter, setHitFilter] = useState('');
+
+  const list = useMasterList(loadList);
+  const record = useMasterRecord<SupplierForm>(EMPTY, () => {
+    setHits(null);
+    setHitFilter('');
+  });
+  const { mode, form, errors, editing } = record;
+
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (mode !== 'new' && mode !== 'edit') return;
+    const frame = requestAnimationFrame(() => nameRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [mode]);
+
   const visibleHits = useMemo(
-    () => (hits ?? []).filter((h) => smartMatches(h.shipperName, hitFilter)),
+    () =>
+      hits
+        ? hits
+            .filter((h) => smartMatches(h.shipperName, hitFilter))
+            .map((h) => ({
+              key: h.shipperCode,
+              name: h.shipperName,
+              detail: [h.shipperCode, h.shipperAddress1].filter(Boolean).join(' · '),
+            }))
+        : null,
     [hits, hitFilter],
   );
 
-  const set = (key: keyof SupplierForm, value: string) => setForm((f) => ({ ...f, [key]: value }));
-
-  // Enter commits the typed code and then asks for its record in the same event, before React re-renders: keep the latest
-  // code in a ref so the Enter handler does not see the previous (empty) one.
-  const codeRef = useRef('');
-  const setCode = (value: string) => {
-    codeRef.current = value;
-    set('code', value);
+  /** The names next to the country and shipper codes of a loaded supplier (legacy `….subscribe` look-ups). */
+  const loadNames = async (values: SupplierForm, request: number) => {
+    const name = async (code: string, read: (c: string) => PromiseLike<string | undefined>) =>
+      code.length === 0 ? '' : ((await read(code)) ?? '');
+    const [country, sea, air] = await Promise.all([
+      name(values.countryCode, (c) => loadCountry(c).then((r) => r.data?.countryName)),
+      name(values.sfosCode, (c) => loadSeaShipper(c).then((r) => r.data?.shName)),
+      name(values.afosCode, (c) => loadAirShipper(c).then((r) => r.data?.shName)),
+    ]);
+    if (!record.isCurrent(request)) return;
+    const loadedNames = { country, sea, air };
+    setNames(loadedNames);
+    setSavedNames(loadedNames);
   };
 
-  const hidePreEntered = () => {
-    setHits(null);
-    setHitFilter('');
-  };
-
-  /**
-   * Legacy `btnNewClick`. It left Country Code and Country Name filled; this clears them too, and AllowChange is reset
-   * (the legacy page kept a viewed record locked).
-   */
-  const clearForm = () => {
-    setForm(EMPTY_FORM);
-    codeRef.current = '';
-    setCountryCode('');
-    setCountryName('');
-    setSfosCode('');
-    setSfosName('');
-    setAfosCode('');
-    setAfosName('');
-    hidePreEntered();
-    setAllowChange(true);
-    setSaveEnabled(true);
-  };
-
-  const changeOption = (next: EntryOption) => {
-    flags.setOption(next);
-    clearForm();
-    if (next === 'View') setSaveEnabled(false);
-  };
-
-  /** Legacy `CountryCode.subscribe`: the country name. An unknown or empty code clears the name (legacy left the old one). */
-  const loadCountryName = async (code: string) => {
-    if (code.length === 0) {
-      setCountryName('');
-      return;
-    }
-    const result = await loadCountry(code);
-    if (result.data) {
-      setCountryName(result.data.countryName);
+  /** Selecting a supplier: legacy "Select" / Enter on a code, then `getSupplierData`. */
+  const openRecord = async (code: string) => {
+    const request = record.beginView(code);
+    setNames(NO_NAMES);
+    const result = await loadSupplier(code);
+    if (!record.isCurrent(request)) return;
+    if (result.data && !result.error) {
+      const values = toForm(result.data);
+      record.showRecord(values);
+      void loadNames(values, request);
     } else if ((result.error as ApiQueryError | undefined)?.status === 404) {
-      setCountryName('');
+      record.failView({
+        kind: 'error',
+        title: MESSAGES.loadFailedTitle,
+        message: MESSAGES.notFound(code),
+      });
     } else {
-      feedback.notifyError(COUNTRY_FAILED);
+      record.failView(
+        {
+          kind: 'error',
+          title: MESSAGES.loadFailedTitle,
+          message: SHARED_MESSAGES.loadFailed,
+          retry: true,
+        },
+        () => void openRecord(code),
+      );
     }
   };
 
-  /** Legacy `SFOSCode.subscribe` / `AFOSCode.subscribe`: the shipper name from the SeaFreight / AirFreight system. */
-  const loadFreightName = async (kind: FreightKind, code: string) => {
-    const setName = kind === 'sea' ? setSfosName : setAfosName;
-    if (code.length === 0) {
-      setName('');
-      return;
-    }
-    const result = kind === 'sea' ? await loadSeaShipper(code) : await loadAirShipper(code);
-    if (result.data) {
-      setName(result.data.shName);
-    } else if ((result.error as ApiQueryError | undefined)?.status === 404) {
-      setName('');
-    } else {
-      feedback.notifyError(kind === 'sea' ? SFOS_FAILED : AFOS_FAILED);
-    }
+  const startNew = () => {
+    setNames(NO_NAMES);
+    record.startNew();
   };
 
-  /**
-   * Legacy `LoadSupplierData`. The legacy page did not load Country Code or the Lima code, so a Change save wrote them
-   * back empty; both are loaded here. View locks the fields.
-   */
-  const applyRecord = (s: Supplier) => {
-    setForm((f) => ({
-      ...f,
-      name: s.shipperName,
-      address1: s.shipperAddress1,
-      address2: s.shipperAddress2,
-      address3: s.shipperAddress3,
-      address4: s.shipperAddress4,
-      contact1: s.shipperContact1,
-      contact2: s.shipperContact2,
-      contact3: s.shipperContact3,
-      tel: s.shipperTel,
-      fax: s.shipperFax,
-      email: s.shipperEmail,
-      lima: s.limaSupplierCode,
-      rex: s.rexNo,
-    }));
-    setCountryCode(s.countryCode ?? '');
-    setSfosCode(s.shipperCodeSea);
-    setAfosCode(s.shipperCodeAir);
-    void loadCountryName(s.countryCode ?? '');
-    void loadFreightName('sea', s.shipperCodeSea);
-    void loadFreightName('air', s.shipperCodeAir);
-    if (optionRef.current === 'View') setAllowChange(false);
+  const cancel = () => {
+    setNames(mode === 'edit' ? savedNames : NO_NAMES);
+    record.cancel();
   };
 
-  const loadRecord = async (code: string, notFoundMessage?: string) => {
-    setBusy(true);
-    try {
-      const result = await loadSupplier(code);
-      if (result.data) {
-        applyRecord(result.data);
-      } else if (result.error && (result.error as ApiQueryError).status !== 404) {
-        feedback.notifyError(MESSAGES.checkFailed);
-      } else if (notFoundMessage) {
-        feedback.notifyError(notFoundMessage);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+  const setText = (key: TextKey, value: string) => record.update(key, value);
 
-  /** Legacy `SupplierCode.subscribe`: outside New, a code unlocks the form and loads its record. */
-  const commitCode = (next: string) => {
-    setCode(next);
-    if (optionRef.current !== 'New' && next.length > 0) {
-      setAllowChange(true);
-      void loadRecord(next);
-    }
-  };
-
-  /** Legacy `SupplierName.subscribe` -> `LoadPreviousData`: the pre-entered box, New only. */
+  /** Legacy `SupplierName.subscribe` -> `LoadPreviousData`: New only; it stays when the field is left (U7). */
   const changeName = (next: string) => {
-    set('name', next);
-    if (optionRef.current !== 'New') return;
+    record.update('name', next);
+    if (next.length > 0) record.clearError('name');
+    if (mode !== 'new') return;
     if (next.length === 0) {
-      hidePreEntered();
+      setHits(null);
+      setHitFilter('');
     } else if (next.length === 1) {
+      // The letters typed while the answer is on its way narrow it when it arrives.
+      setHitFilter('');
+      const request = record.nextRequest();
       void searchNames(next).then((result) => {
-        if (result.data && result.data.length > 0) {
-          setHits(result.data);
-          setHitFilter('');
-        } else {
-          hidePreEntered();
-        }
+        if (!record.isCurrent(request)) return;
+        setHits(result.data && result.data.length > 0 ? result.data : null);
       });
     } else {
       setHitFilter(next);
     }
   };
 
-  const openDialog = async (
-    title: string,
-    columns: readonly LookupColumn[],
-    fetchRows: () => Promise<{ rows?: readonly object[]; unavailable?: string }>,
-    onPick: (row: object) => void,
-  ) => {
-    setBusy(true);
-    try {
-      const { rows, unavailable } = await fetchRows();
-      if (!rows) {
-        feedback.notifyError(unavailable ?? COMMON_MESSAGES.noServer);
-      } else if (rows.length === 0) {
-        feedback.notifyError(COMMON_MESSAGES.nothingToList);
-      } else {
-        setDialog({
-          title,
-          columns,
-          rows,
-          onPick: (row) => {
-            setDialog(null);
-            onPick(row);
-          },
-        });
-      }
-    } finally {
-      setBusy(false);
-    }
+  const nameIssue = (message: string): ValidationIssue => ({
+    field: 'name',
+    message,
+    onSelect: () => nameRef.current?.focus(),
+  });
+
+  /** Legacy `beforeSaveCheking`: the first failing check stops, as legacy (name; code; starting letter). */
+  const firstProblem = (values: SupplierForm, isNew: boolean): ValidationIssue | null => {
+    if (values.name.length <= 0) return nameIssue(MESSAGES.enterName);
+    if (isNew) return null;
+    if (values.code.length <= 0) return { field: 'code', message: MESSAGES.enterCode };
+    if (values.code[0] !== values.name[0])
+      return nameIssue(MESSAGES.startWith(values.code[0], values.code));
+    return null;
   };
 
-  /** Legacy `btnSupplierList`: "Supplier Listing"; Select fills the form outside New (in New it only closes). */
-  const openSupplierList = () =>
-    openDialog(
-      'Supplier Listing',
-      SUPPLIER_COLUMNS,
-      async () => ({ rows: (await loadList()).data }),
-      (row) => {
-        if (optionRef.current === 'New') return;
-        const picked = (row as { shipperCode: string }).shipperCode;
-        setCode(picked);
-        setAllowChange(true);
-        void loadRecord(picked);
-      },
-    );
-
-  /** Legacy `btnCountryCodeList`: "Country Listing"; Select fills the country in every option. */
-  const openCountryList = () =>
-    openDialog(
-      'Country Listing',
-      COUNTRY_COLUMNS,
-      async () => ({ rows: (await loadCountries()).data }),
-      (row) => {
-        const picked = (row as { countryCode: string }).countryCode;
-        setCountryCode(picked);
-        void loadCountryName(picked);
-      },
-    );
-
-  const openFreightList = (kind: FreightKind) =>
-    openDialog(
-      kind === 'sea' ? 'Sea Shipper Listing' : 'Air Shipper Listing',
-      FREIGHT_SHIPPER_COLUMNS,
-      async () => {
-        const result = kind === 'sea' ? await loadSeaShippers() : await loadAirShippers();
-        const unavailable =
-          (result.error as ApiQueryError | undefined)?.status === 503
-            ? kind === 'sea'
-              ? SEA_UNAVAILABLE
-              : AIR_UNAVAILABLE
-            : undefined;
-        return { rows: result.data, unavailable };
-      },
-      (row) => {
-        const picked = (row as { shCode: string }).shCode;
-        if (kind === 'sea') setSfosCode(picked);
-        else setAfosCode(picked);
-        void loadFreightName(kind, picked);
-      },
-    );
-
-  /** Legacy `findSupplierCode` (Enter in the code field): an empty code lists (in New too, where Select only closes), a code loads its record. */
-  const findCode = () => {
-    if (codeRef.current === '') {
-      void openSupplierList();
-    } else {
-      void loadRecord(codeRef.current, COMMON_MESSAGES.invalidCode);
-    }
-  };
-
-  /** Legacy `beforeSaveCheking` + `chkSupplierCode` + `btnSaveData`. */
+  /** Legacy `btnSaveData` (+ `chkSupplierCode` for a change). */
   const save = async () => {
-    setSaveEnabled(false);
-    if (form.name.length <= 0) {
-      feedback.notifyError(ENTER_NAME);
-      setSaveEnabled(true);
+    if (record.saving || !editing) return;
+    const isNew = mode === 'new';
+    const values = form;
+    const problem = firstProblem(values, isNew);
+    if (problem) {
+      record.showProblems([problem]);
       return;
     }
-    if (option !== 'New') {
-      if (form.code.length <= 0) {
-        feedback.notifyError(ENTER_CODE);
-        setSaveEnabled(true);
-        return;
-      }
-      // Legacy: an alert, and Save stayed disabled; the server enforces the same rule.
-      if (form.code[0] !== form.name[0]) {
-        feedback.notifyError(startWith(form.code[0]));
-        setSaveEnabled(true);
-        return;
-      }
-    }
-
-    setBusy(true);
-    try {
-      if (option !== 'New') {
-        const check = await loadSupplier(form.code);
-        if (!check.data) {
-          const status = (check.error as ApiQueryError | undefined)?.status;
-          feedback.notifyError(status === 404 ? MESSAGES.doesNotExist : MESSAGES.checkFailed);
-          setSaveEnabled(true);
-          return;
-        }
-      }
-
-      const result = await saveSupplier({
-        mode: option === 'New' ? 'New' : 'Change',
-        shipperCode: form.code,
-        shipperName: form.name,
-        shipperAddress1: form.address1,
-        shipperAddress2: form.address2,
-        shipperAddress3: form.address3,
-        shipperAddress4: form.address4,
-        shipperContact1: form.contact1,
-        shipperContact2: form.contact2,
-        shipperContact3: form.contact3,
-        shipperTel: form.tel,
-        shipperEmail: form.email,
-        shipperFax: form.fax,
-        countryCode,
-        shipperCodeAir: afosCode,
-        shipperCodeSea: sfosCode,
-        limaSupplierCode: form.lima,
-        rexNo: form.rex,
-      });
-      if ('data' in result && result.data) {
-        if (option === 'New') setCode(result.data.supplierCode);
-        // Like legacy, Save stays disabled until New (or another Option) is chosen.
-        feedback.notifySuccess(COMMON_MESSAGES.saved);
-      } else if ('error' in result) {
-        feedback.notifyError(saveFailureText(result.error as ApiQueryError, MESSAGES));
-        setSaveEnabled(true);
-      }
-    } finally {
-      setBusy(false);
-    }
+    await record.runKeyedSave({
+      isNew,
+      key: values.code,
+      check: isNew ? undefined : () => loadSupplier(values.code),
+      send: () =>
+        saveSupplier({
+          mode: isNew ? 'New' : 'Change',
+          shipperCode: values.code,
+          shipperName: values.name,
+          shipperAddress1: values.address1,
+          shipperAddress2: values.address2,
+          shipperAddress3: values.address3,
+          shipperAddress4: values.address4,
+          shipperContact1: values.contact1,
+          shipperContact2: values.contact2,
+          shipperContact3: values.contact3,
+          shipperTel: values.tel,
+          shipperEmail: values.email,
+          shipperFax: values.fax,
+          countryCode: values.countryCode,
+          shipperCodeAir: values.afosCode,
+          shipperCodeSea: values.sfosCode,
+          limaSupplierCode: values.lima,
+          rexNo: values.rex,
+        }),
+      messages: MESSAGES,
+      refuseExisting: () =>
+        record.setNotice({
+          kind: 'error',
+          title: SHARED_MESSAGES.notSavedTitle,
+          message: MESSAGES.sequenceFull(values.name[0] ?? ''),
+        }),
+      onSaved: (data) => {
+        const code = isNew ? (data as SaveSupplierResult).supplierCode : values.code;
+        setSavedNames(names);
+        record.showSaved({ ...values, code }, code, MESSAGES.saved(code, isNew));
+        void list.refresh();
+      },
+      retry: () => void save(),
+    });
   };
 
-  const text = (label: string, key: keyof SupplierForm) => (
-    <TextInput
-      label={label}
-      value={form[key]}
-      readOnly={!allowChange}
-      onChange={(value) => set(key, value)}
-    />
-  );
+  const text = (label: string, key: TextKey, maxLength = 50, span?: number | 'full') => {
+    const input = (
+      <TextInput
+        label={label}
+        value={form[key]}
+        onChange={editing ? (value) => setText(key, value) : undefined}
+        readOnly={!editing}
+        maxLength={maxLength}
+      />
+    );
+    return span ? (
+      <FieldGridItem key={key} span={span}>
+        {input}
+      </FieldGridItem>
+    ) : (
+      <div key={key}>{input}</div>
+    );
+  };
+
+  const listRow = list.items.find((s) => s.shipperCode === record.selected);
+  const title =
+    mode === 'new'
+      ? 'New supplier'
+      : record.loaded && record.baseline.name
+        ? `${record.baseline.name} (${record.selected})`
+        : (record.selected ?? 'Supplier details');
 
   return (
-    <>
-      <MasterEntryShell
-        title="Suppliers Master Details"
-        option={option}
-        onOptionChange={changeOption}
-        saveEnabled={saveEnabled}
-        onSave={() => void save()}
-        onNew={clearForm}
-        onClose={() => void navigate(PATHS.home)}
-        busy={busy}
-      >
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ width: 240 }}>
-            <LookupField
-              id="SupplierCode"
-              searchId="btnSupplierCode"
-              label="Supplier Code"
-              value={form.code}
-              readOnly={!allowChange || option === 'New'}
-              searchDisabled={!allowChange}
-              onCommit={commitCode}
-              onEnter={findCode}
-              onSearch={() => void openSupplierList()}
-            />
-          </Box>
-          <Box sx={{ flex: 1, minWidth: 280 }}>
-            <TextInput
-              label="Supplier Name"
-              value={form.name}
-              readOnly={!allowChange}
-              onChange={changeName}
-            />
-          </Box>
-        </Box>
-        {hits ? (
-          <PreEnteredBox<SupplierNameHit>
-            heading="Pre-Entered Supplier Listing"
-            columns={PRE_ENTERED_COLUMNS}
-            rows={visibleHits}
-            getRowId={(h) => h.shipperCode}
-          />
-        ) : null}
-        <Box
-          sx={{
-            display: 'grid',
-            gap: 2,
-            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-            alignItems: 'start',
-          }}
-        >
-          <SectionBox title="Address Details">
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Box sx={{ width: 220 }}>
-                <LookupField
-                  id="CountryCode"
-                  searchId="btnCountryCode"
-                  label="Country"
-                  value={countryCode}
-                  readOnly
-                  onSearch={() => void openCountryList()}
-                />
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 180 }}>
-                <TextInput id="CountryName" ariaLabel="Country Name" value={countryName} />
-              </Box>
-            </Box>
-            {text('Address Line1', 'address1')}
-            {text('Address Line2', 'address2')}
-            {text('Address Line3', 'address3')}
-            {text('Address Line4', 'address4')}
-          </SectionBox>
-          <SectionBox title="Contact Number Details">
-            {text('Telephone No', 'tel')}
-            {text('Fax No', 'fax')}
-            {text('Email Address', 'email')}
-          </SectionBox>
-          <SectionBox title="Contact Person Details">
-            {text('Contact Person 1', 'contact1')}
-            {text('Contact Person 2', 'contact2')}
-            {text('Contact Person 3', 'contact3')}
-          </SectionBox>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Box sx={{ width: 220 }}>
-                <LookupField
-                  id="SFOSCode"
-                  searchId="btnSFOSCode"
-                  label="Shipper Code [SFOS]"
-                  value={sfosCode}
-                  readOnly
-                  onSearch={() => void openFreightList('sea')}
-                />
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 180 }}>
-                <TextInput id="SFOSName" ariaLabel="Shipper Name [SFOS]" value={sfosName} />
-              </Box>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Box sx={{ width: 220 }}>
-                <LookupField
-                  id="AFOSCode"
-                  searchId="btnAFOSCode"
-                  label="Shipper Code [AFOS]"
-                  value={afosCode}
-                  readOnly
-                  onSearch={() => void openFreightList('air')}
-                />
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 180 }}>
-                <TextInput id="AFOSName" ariaLabel="Shipper Name [AFOS]" value={afosName} />
-              </Box>
-            </Box>
-            <Box sx={{ maxWidth: 220 }}>{text('Shipper Code[LIMA]', 'lima')}</Box>
-            <Box sx={{ maxWidth: 220 }}>{text('REX No', 'rex')}</Box>
-          </Box>
-        </Box>
-      </MasterEntryShell>
-      {dialog ? (
-        <LookupDialog
-          open
-          title={dialog.title}
-          columns={dialog.columns}
-          rows={dialog.rows}
-          onSelect={dialog.onPick}
-          onClose={() => setDialog(null)}
+    <MasterDataPage<Supplier>
+      data-testid="supplier-page"
+      title="Suppliers"
+      context={MASTER_DATA_CONTEXT}
+      entityName="supplier"
+      items={list.items}
+      getItemId={(s) => s.shipperCode}
+      getSearchText={(s) =>
+        `${s.shipperCode} ${s.shipperName} ${s.countryCode ?? ''} ${s.shipperAddress1}`
+      }
+      renderItem={(s) => ({
+        primary: s.shipperName,
+        secondary: [s.shipperCode, s.countryCode, s.shipperAddress1].filter(Boolean).join(' · '),
+      })}
+      listLoading={list.state === 'loading'}
+      listError={list.state === 'failed' ? SHARED_MESSAGES.listFailed : null}
+      onRetryList={list.reload}
+      selectedId={record.selected}
+      onSelect={(s) => void openRecord(s.shipperCode)}
+      mode={mode}
+      onNew={startNew}
+      onEdit={record.loaded ? record.startEdit : undefined}
+      onCancel={cancel}
+      onSave={() => void save()}
+      saving={record.saving}
+      dirty={record.dirty}
+      detailTitle={title}
+      detailLoading={record.detailLoading}
+      detailMessage={
+        <MasterDetailNotice
+          notice={record.notice}
+          onRetry={record.retry}
+          onDismiss={record.notice?.kind === 'error' ? record.dismissNotice : undefined}
         />
+      }
+      onClose={() => void navigate(PATHS.home)}
+    >
+      {record.loaded ? (
+        <Stack spacing={2.5}>
+          <FieldGrid columns={{ xs: 1, sm: 3 }}>
+            <TextInput
+              label="Supplier code"
+              value={mode === 'new' ? '' : form.code}
+              readOnly
+              helperText={mode === 'new' ? MESSAGES.codeAssigned : undefined}
+              error={!!errors.code}
+            />
+            <FieldGridItem span={2}>
+              <TextInput
+                label="Supplier name"
+                inputRef={nameRef}
+                value={form.name}
+                onChange={editing ? changeName : undefined}
+                readOnly={!editing}
+                required={editing}
+                maxLength={50}
+                error={!!errors.name}
+                helperText={errors.name}
+              />
+            </FieldGridItem>
+            {mode === 'new' ? (
+              <FieldGridItem span="full">
+                <SimilarNamesHint names={visibleHits} plural={MESSAGES.similarPlural} />
+              </FieldGridItem>
+            ) : null}
+          </FieldGrid>
+
+          <FormSection variant="plain" headingLevel={3} title="Address">
+            <FieldGrid columns={{ xs: 1, sm: 2 }}>
+              <CountryLookupField
+                code={form.countryCode}
+                countryName={names.country}
+                readOnly={!editing}
+                emptyHelp={editing ? MESSAGES.countryOptional : undefined}
+                onChange={(code, name) => {
+                  record.update('countryCode', code);
+                  setNames((n) => ({ ...n, country: name }));
+                }}
+              />
+              <div />
+              {text('Address line 1', 'address1')}
+              {text('Address line 2', 'address2')}
+              {text('Address line 3', 'address3')}
+              {text('Address line 4', 'address4')}
+            </FieldGrid>
+          </FormSection>
+
+          <FormSection variant="plain" headingLevel={3} title="Contact">
+            <FieldGrid columns={{ xs: 1, sm: 3 }}>
+              {text('Telephone no', 'tel')}
+              {text('Fax no', 'fax')}
+              {text('Email address', 'email')}
+              {text('Contact person 1', 'contact1')}
+              {text('Contact person 2', 'contact2')}
+              {text('Contact person 3', 'contact3')}
+            </FieldGrid>
+          </FormSection>
+
+          <FormSection variant="plain" headingLevel={3} title="Codes in other systems">
+            <FieldGrid columns={{ xs: 1, sm: 2 }}>
+              <CodeLookupField<FreightShipper>
+                label="Sea shipper (SFOS)"
+                code={form.sfosCode}
+                displayName={names.sea}
+                readOnly={!editing}
+                maxLength={5}
+                loadList={() => loadSeaShippers()}
+                loadName={(c) =>
+                  loadSeaShipper(c).then((r) => ({
+                    data: r.data ? { name: r.data.shName } : undefined,
+                    error: r.error,
+                  }))
+                }
+                columns={FREIGHT_COLUMNS}
+                getCode={(r) => r.shCode}
+                texts={FREIGHT_TEXTS.sea}
+                onChange={(code, name) => {
+                  record.update('sfosCode', code);
+                  setNames((n) => ({ ...n, sea: name }));
+                }}
+              />
+              <CodeLookupField<FreightShipper>
+                label="Air shipper (AFOS)"
+                code={form.afosCode}
+                displayName={names.air}
+                readOnly={!editing}
+                maxLength={5}
+                loadList={() => loadAirShippers()}
+                loadName={(c) =>
+                  loadAirShipper(c).then((r) => ({
+                    data: r.data ? { name: r.data.shName } : undefined,
+                    error: r.error,
+                  }))
+                }
+                columns={FREIGHT_COLUMNS}
+                getCode={(r) => r.shCode}
+                texts={FREIGHT_TEXTS.air}
+                onChange={(code, name) => {
+                  record.update('afosCode', code);
+                  setNames((n) => ({ ...n, air: name }));
+                }}
+              />
+              {text('LIMA supplier code', 'lima', 10)}
+              {text('REX no', 'rex')}
+            </FieldGrid>
+          </FormSection>
+
+          {mode === 'view' && listRow ? (
+            <StatGroup
+              label="Record history"
+              items={[
+                { label: 'Created', value: auditText(listRow.dateCreate, listRow.createBy, fmt) },
+                {
+                  label: 'Last changed',
+                  value: auditText(listRow.dateUpdate, listRow.updateBy, fmt),
+                },
+              ]}
+            />
+          ) : null}
+        </Stack>
       ) : null}
-    </>
+    </MasterDataPage>
   );
 }

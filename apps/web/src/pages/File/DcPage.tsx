@@ -121,7 +121,7 @@ export function DcPage() {
     setDetail(null);
     const result = await loadDc(name);
     if (!record.isCurrent(request)) return;
-    if (result.data) {
+    if (result.data && !result.error) {
       const dc = result.data;
       setDetail(dc);
       record.showRecord({ whDes: dc.whDes, countryCode: dc.countryCode });

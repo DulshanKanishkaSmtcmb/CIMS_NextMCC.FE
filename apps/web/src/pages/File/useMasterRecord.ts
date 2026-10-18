@@ -56,14 +56,18 @@ type MutationResult = { data: unknown; error?: undefined } | { data?: undefined;
 export interface KeyedSaveOptions {
   isNew: boolean;
   key: string;
-  /** The existence check before the save (legacy `chk…Code`): the record-by-key lookup. */
-  check: () => PromiseLike<QueryResult>;
+  /**
+   * The existence check before the save (legacy `chk…Code`): the record-by-key lookup. Omit it where the legacy page
+   * had none (a New supplier: the server generates the code).
+   */
+  check?: () => PromiseLike<QueryResult>;
   /** The POST (new) or PUT (change). */
   send: () => PromiseLike<MutationResult>;
   messages: KeyedSaveMessages;
   /** New and the key exists (check or server 409): show it on the key field. */
   refuseExisting: () => void;
-  onSaved: () => void;
+  /** The save's answer (e.g. the generated code). */
+  onSaved: (data: unknown) => void;
   /** Run again after "Try again". */
   retry: () => void;
 }
@@ -209,9 +213,10 @@ export function useMasterRecord<F extends object>(empty: F, onReset?: () => void
       message: o.messages.doesNotExist(o.key),
     });
     try {
-      const check = await o.check();
-      const exists = Boolean(check.data);
-      if (!exists && (check.error as ApiQueryError | undefined)?.status !== 404) {
+      const check = o.check ? await o.check() : null;
+      // A failed refetch keeps the previous answer's data in RTK Query: the error decides first.
+      const exists = !check?.error && Boolean(check?.data);
+      if (check && !exists && (check.error as ApiQueryError | undefined)?.status !== 404) {
         setNotice({
           kind: 'error',
           title: o.messages.checkFailedTitle,
@@ -220,17 +225,17 @@ export function useMasterRecord<F extends object>(empty: F, onReset?: () => void
         });
         return;
       }
-      if (o.isNew && exists) {
+      if (check && o.isNew && exists) {
         o.refuseExisting();
         return;
       }
-      if (!o.isNew && !exists) {
+      if (check && !o.isNew && !exists) {
         setNotice(missing());
         return;
       }
       const result = await o.send();
       if (result.data) {
-        o.onSaved();
+        o.onSaved(result.data);
         return;
       }
       if (!result.error) return;
