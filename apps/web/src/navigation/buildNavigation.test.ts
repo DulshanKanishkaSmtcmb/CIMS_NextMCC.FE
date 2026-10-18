@@ -55,6 +55,8 @@ describe('buildNavigation', () => {
       { title: 'Country', segment: 'File/Country' },
       { title: 'Ports...', segment: 'File/Ports' },
       { title: 'DC', segment: 'File/DC' },
+      { title: 'Packing Material', segment: 'File/PMMaster' },
+      { title: 'Product Category', segment: 'File/ProductCategory' },
     ]);
     expect(reference?.children).toMatchObject([
       { title: 'Field Captions', segment: 'Reference/FieldCaptions' },

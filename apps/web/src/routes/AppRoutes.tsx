@@ -31,6 +31,12 @@ const PortsPage = lazy(() =>
   import('../pages/File/PortsPage').then((m) => ({ default: m.PortsPage })),
 );
 const DcPage = lazy(() => import('../pages/File/DcPage').then((m) => ({ default: m.DcPage })));
+const PmMasterPage = lazy(() =>
+  import('../pages/File/PmMasterPage').then((m) => ({ default: m.PmMasterPage })),
+);
+const ProductCategoryPage = lazy(() =>
+  import('../pages/File/ProductCategoryPage').then((m) => ({ default: m.ProductCategoryPage })),
+);
 const NotFoundPage = lazy(() =>
   import('../pages/NotFound/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
@@ -57,6 +63,8 @@ export function AppRoutes() {
           <Route path={PATHS.country} element={<CountryPage />} />
           <Route path={PATHS.ports} element={<PortsPage />} />
           <Route path={PATHS.dc} element={<DcPage />} />
+          <Route path={PATHS.pmMaster} element={<PmMasterPage />} />
+          <Route path={PATHS.productCategory} element={<ProductCategoryPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

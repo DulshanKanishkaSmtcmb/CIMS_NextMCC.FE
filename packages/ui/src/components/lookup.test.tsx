@@ -24,6 +24,7 @@ function Field(props: Partial<LookupFieldProps> & { initial?: string }) {
         onEnter={props.onEnter}
         readOnly={props.readOnly}
         searchDisabled={props.searchDisabled}
+        hideSearch={props.hideSearch}
       />
       <button type="button" onClick={() => setValue('FROM-PAGE')}>
         Set from page
@@ -88,6 +89,12 @@ describe('LookupField', () => {
   it('disables the search button on request', () => {
     render(<Field searchDisabled />);
     expect(document.getElementById('btnCode')).toBeDisabled();
+  });
+
+  it('hides the search button on request', () => {
+    render(<Field hideSearch />);
+    expect(document.getElementById('btnCode')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Code' })).toBeInTheDocument();
   });
 
   it('shows a value the page sets, replacing what was typed', async () => {

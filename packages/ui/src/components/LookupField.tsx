@@ -17,6 +17,8 @@ export interface LookupFieldProps {
   /** Not editable (the search button still works unless `searchDisabled`). */
   readOnly?: boolean;
   searchDisabled?: boolean;
+  /** Do not show the search button at all (legacy `visible:` binding on the button, e.g. PM Master in New mode). */
+  hideSearch?: boolean;
   /** Id of the input (the legacy element id, e.g. "CountryCode"). */
   id?: string;
   /** Id of the search button (the legacy button id, e.g. "btnCountryCode"). */
@@ -42,6 +44,7 @@ export function LookupField({
   onSearch,
   readOnly = false,
   searchDisabled = false,
+  hideSearch = false,
   id,
   searchId,
   searchLabel = 'Search',
@@ -85,7 +88,7 @@ export function LookupField({
       slotProps={{
         htmlInput: { readOnly },
         input: {
-          endAdornment: (
+          endAdornment: hideSearch ? undefined : (
             <InputAdornment position="end">
               <IconButton
                 id={searchId}

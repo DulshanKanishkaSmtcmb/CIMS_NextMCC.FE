@@ -148,7 +148,7 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Code field with a search button: the legacy "input + magnifier button + dialog with a DataTable" lookup (Country, Ports, DC pages). Pair it with `LookupDialog`.
 - **Wraps:** `TextField` with an `InputAdornment` and `IconButton` (Search icon).
-- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `label`, `inputRef`, `name`, `disabled`, `fullWidth`.
+- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `hideSearch` (no search button at all, legacy `visible:` binding; PM Master in New mode), `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `label`, `inputRef`, `name`, `disabled`, `fullWidth`.
 - **Behaviour:** a `value` set by the page (a dialog selection, a loaded record, New) replaces the typed text. A read-only field still searches unless `searchDisabled`.
 - **Usage:**
   ```tsx

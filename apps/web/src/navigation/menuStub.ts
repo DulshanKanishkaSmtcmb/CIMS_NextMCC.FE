@@ -84,6 +84,20 @@ export const MENU_STUB: readonly LegacyMenuRow[] = [
     menuController: 'File',
     menuAction: 'DC',
   }),
+  row({
+    menuId: '100.10',
+    menuName: 'Packing Material',
+    menuParentId: '100',
+    menuController: 'File',
+    menuAction: 'PMMaster',
+  }),
+  row({
+    menuId: '100.20',
+    menuName: 'Product Category',
+    menuParentId: '100',
+    menuController: 'File',
+    menuAction: 'ProductCategory',
+  }),
   row({ menuId: '3', menuName: 'Reference', menuIsParent: true, menuImageClass: 'reference' }),
   row({
     menuId: '3.1',

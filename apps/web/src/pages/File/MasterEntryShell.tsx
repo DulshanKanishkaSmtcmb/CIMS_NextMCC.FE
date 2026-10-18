@@ -11,6 +11,10 @@ export interface MasterEntryShellProps {
   onSave: () => void;
   onNew: () => void;
   onClose: () => void;
+  /** The Option choices, in order. Default: New, Change, View (PM Master offers only New and Change). */
+  options?: readonly EntryOption[];
+  /** Show the New button. Default true (the PM Master page has no New button: the legacy one is commented out). */
+  showNew?: boolean;
   /** A request is running: the page is blocked and a message shows. */
   busy?: boolean;
   busyMessage?: string;
@@ -29,6 +33,8 @@ export function MasterEntryShell({
   onSave,
   onNew,
   onClose,
+  options = ENTRY_OPTIONS,
+  showNew = true,
   busy = false,
   busyMessage = 'Loading...',
   children,
@@ -43,7 +49,7 @@ export function MasterEntryShell({
             <SelectField
               label="Option"
               value={option}
-              options={ENTRY_OPTIONS}
+              options={options}
               onChange={(next) => onOptionChange(next as EntryOption)}
             />
           </Box>
@@ -54,9 +60,11 @@ export function MasterEntryShell({
         <Button variant="contained" color="info" onClick={onSave} disabled={!saveEnabled}>
           Save
         </Button>
-        <Button variant="contained" color="info" onClick={onNew}>
-          New
-        </Button>
+        {showNew ? (
+          <Button variant="contained" color="info" onClick={onNew}>
+            New
+          </Button>
+        ) : null}
         <Button variant="contained" color="info" onClick={onClose}>
           Close
         </Button>

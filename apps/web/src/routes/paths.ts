@@ -10,4 +10,6 @@ export const PATHS = {
   country: '/File/Country',
   ports: '/File/Ports',
   dc: '/File/DC',
+  pmMaster: '/File/PMMaster',
+  productCategory: '/File/ProductCategory',
 } as const;
