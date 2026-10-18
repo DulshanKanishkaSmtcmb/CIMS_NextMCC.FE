@@ -271,6 +271,11 @@ export const cimsTheme: Theme = createTheme({
           '&.Mui-focused': {
             boxShadow: `0 0 0 3px rgba(${paletteVar('primary-mainChannel')} / 0.25)`,
           },
+          // Read-only values (a record in view mode, display fields) look different from fields that take input.
+          '&.MuiInputBase-readOnly': {
+            backgroundColor: paletteVar('action-hover'),
+            '& .MuiOutlinedInput-notchedOutline': { borderStyle: 'dashed' },
+          },
         },
       },
     },

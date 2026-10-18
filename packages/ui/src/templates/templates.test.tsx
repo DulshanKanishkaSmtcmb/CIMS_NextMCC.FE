@@ -231,6 +231,32 @@ describe('MasterDataPage', () => {
     expect(h.onNew).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the record whose code was typed in the search, or the only match, on Enter', async () => {
+    const user = userEvent.setup();
+    const h = renderMaster();
+    const search = screen.getByRole('searchbox', { name: 'Search countries' });
+
+    await user.type(search, 'a{Enter}'); // India, Pakistan, Sri Lanka: no single match, nothing opens
+    expect(h.onSelect).not.toHaveBeenCalled();
+    await user.clear(search);
+    await user.type(search, 'pak{Enter}');
+    expect(h.onSelect).toHaveBeenCalledWith(COUNTRIES[1]);
+    await user.clear(search);
+    await user.type(search, 'lka{Enter}');
+    expect(h.onSelect).toHaveBeenLastCalledWith(COUNTRIES[2]);
+  });
+
+  it('offers Close, which asks first when there are unsaved changes', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    renderMaster({ mode: 'edit', selectedId: 'IND', dirty: true, onClose });
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole('button', { name: 'Discard changes' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('focuses the search with / when focus is not in a field', async () => {
     const user = userEvent.setup();
     renderMaster();

@@ -91,6 +91,7 @@ export function LookupField({
       slotProps={{
         htmlInput: { readOnly, 'aria-label': ariaLabel },
         input: {
+          readOnly,
           endAdornment: hideSearch ? undefined : (
             <InputAdornment position="end">
               <IconButton

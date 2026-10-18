@@ -136,6 +136,49 @@ describe('TextInput', () => {
     await user.type(screen.getByLabelText('Container No'), 'MSCU1');
     expect(screen.getByTestId('echo')).toHaveTextContent('MSCU1');
   });
+
+  it('stops at maxLength and counts short limits while editable', async () => {
+    const user = userEvent.setup();
+    function Form({ readOnly }: { readOnly?: boolean }) {
+      const [value, setValue] = useState('');
+      return (
+        <TextInput
+          label="Country code"
+          value={value}
+          onChange={setValue}
+          maxLength={3}
+          readOnly={readOnly}
+        />
+      );
+    }
+    const { rerender } = render(
+      <CimsThemeProvider>
+        <Form />
+      </CimsThemeProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Country code'), 'INDX');
+    expect(screen.getByLabelText('Country code')).toHaveValue('IND');
+    expect(screen.getByText('3/3')).toBeInTheDocument();
+
+    rerender(
+      <CimsThemeProvider>
+        <Form readOnly />
+      </CimsThemeProvider>,
+    );
+    expect(screen.queryByText('3/3')).not.toBeInTheDocument();
+  });
+
+  it('marks a read-only field so it looks different from an editable one', () => {
+    render(
+      <CimsThemeProvider>
+        <TextInput label="Country name" value="INDIA" readOnly />
+      </CimsThemeProvider>,
+    );
+    expect(screen.getByLabelText('Country name').closest('.MuiInputBase-root')).toHaveClass(
+      'MuiInputBase-readOnly',
+    );
+  });
 });
 
 describe('table-cell fields without a visible label', () => {

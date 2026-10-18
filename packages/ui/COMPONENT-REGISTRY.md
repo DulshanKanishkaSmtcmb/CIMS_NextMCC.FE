@@ -143,7 +143,8 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Plain typed text field, and read-only display boxes (legacy `readonly="readonly"` inputs). Scanner fields use `ScanInput`.
 - **Wraps:** `TextField`.
-- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `onBlur?`, `readOnly?`, `ariaLabel?` (when there is no visible label), `rows?` (a text area of at least that many rows, legacy `<textarea>`; OK-to-Load Reason detail), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
+- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `onBlur?`, `readOnly?`, `ariaLabel?` (when there is no visible label), `rows?` (a text area of at least that many rows, legacy `<textarea>`; OK-to-Load Reason detail), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`), `maxLength?` (the API validator's limit; typing stops there), `showCount?` ("n/max" under the field; default when the limit is 20 or less and the field is editable).
+- **Notes:** read-only fields (here and in `LookupField`) get the theme's read-only look: tinted background, dashed outline (`MuiInputBase-readOnly`).
 - **Usage:** `<TextInput ariaLabel="Country name" value={countryName} />`
 - **Tests:** `components/formFields.test.tsx`.
 
@@ -267,12 +268,12 @@ The design rules behind these are in the legacy workspace `docs/19-ux-design-pri
 - **Usage:** see `ConfirmArrivalPage.tsx` (step 1 filters as `scanArea`, step 2 pick list as `aside`, step 3 lists as `children`, date + totals + Confirm in the `ActionBar`).
 - **Tests:** `templates/templates.test.tsx`.
 
-### MasterDataPage (status: available, no page uses it yet)
+### MasterDataPage (status: available)
 
 - **Purpose:** Template for master-data pages: searchable list + detail panel (drawer below `md`) with `idle`/`view`/`edit`/`new` modes, a dirty-state guard (ConfirmDialog "Discard unsaved changes?" with focus on "Keep editing", plus the browser's `beforeunload` prompt), Cancel/Save conventions, a mode chip, and keyboard shortcuts with a legend (`/` search, Alt+N new, Alt+E edit, Ctrl+S save, Esc cancel).
 - **Wraps:** `PageShell`, `TextField` (search), `List`/`ListItemButton`, `Drawer`, `ConfirmDialog`, `EmptyState`, `ErrorState`, `ListSkeleton`/`FormSkeleton`, `StatusChip`, `ShortcutsLegend`, `useMediaQuery`.
-- **Key props:** `title` (plural), `entityName` (singular, lower case), `items`, `getItemId`, `renderItem → { primary, secondary?, meta? }`, `getSearchText` (every search word must occur), `search?`/`onSearchChange?`, `listLoading?`, `listError?`, `onRetryList?`, `selectedId`, `onSelect`, `mode`, `onNew?`, `onEdit?`, `onCancel`, `onSave`, `saving?`, `dirty?`, `detailTitle?`, `detailLoading?`, `detailMessage?` (ValidationSummary / ErrorState), `detailLayout?` (`auto` | `panel` | `drawer`), `secondaryActions?`, `children` (the form; the page makes fields read-only in `view`).
-- **Notes:** the template never validates or saves; the page does, and reports through `detailMessage` and the fields. Enter never saves (scanners send Enter); Ctrl+S does. Migration steps: `docs/19` section 14.
+- **Key props:** `title` (plural), `entityName` (singular, lower case), `items`, `getItemId`, `renderItem → { primary, secondary?, meta? }`, `getSearchText` (every search word must occur), `search?`/`onSearchChange?`, `listLoading?`, `listError?`, `onRetryList?`, `selectedId`, `onSelect`, `mode`, `onNew?`, `onEdit?`, `onCancel`, `onSave`, `saving?`, `dirty?`, `detailTitle?`, `detailLoading?`, `detailMessage?` (ValidationSummary / ErrorState), `detailLayout?` (`auto` | `panel` | `drawer`), `secondaryActions?`, `onClose?` (quiet header Close, behind the guard), `children` (the form; the page makes fields read-only in `view`).
+- **Notes:** the template never validates or saves; the page does, and reports through `detailMessage` and the fields. Enter never saves (scanners send Enter); Ctrl+S does. Enter in the search box opens the record whose id equals the typed text (case-insensitive), or the only match (the keyboard path that replaces the legacy "type the code + Enter"). Migration steps: `docs/19` section 14.
 - **Tests:** `templates/templates.test.tsx` (search, empty search, open, view/edit, guard, shortcuts, `/`, load failure, skeleton, drawer).
 
 ### FormSection, FieldGrid, FieldGridItem (status: available)

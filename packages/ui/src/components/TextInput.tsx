@@ -1,4 +1,5 @@
 import type { Ref } from 'react';
+import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 
 export interface TextInputProps {
@@ -23,6 +24,10 @@ export interface TextInputProps {
   ariaLabel?: string;
   /** A text area (legacy <textarea>) of at least this many rows instead of a one-line field. */
   rows?: number;
+  /** The longest value the server accepts (the API validator's limit): typing stops there. */
+  maxLength?: number;
+  /** Show "n/max" under the field. Default: when the limit is short (20 or less) and the field is editable. */
+  showCount?: boolean;
 }
 
 /**
@@ -46,8 +51,22 @@ export function TextInput({
   fullWidth = true,
   ariaLabel,
   rows,
+  maxLength,
+  showCount,
 }: TextInputProps) {
   const isReadOnly = readOnly ?? onChange === undefined;
+  const counted =
+    maxLength !== undefined && (showCount ?? (maxLength <= 20 && !isReadOnly && !disabled));
+  const helper = counted ? (
+    <Box component="span" sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+      <span>{helperText}</span>
+      <Box component="span" sx={{ flex: 'none', fontVariantNumeric: 'tabular-nums' }}>
+        {`${value.length}/${maxLength}`}
+      </Box>
+    </Box>
+  ) : (
+    helperText
+  );
   return (
     <TextField
       label={label}
@@ -61,11 +80,14 @@ export function TextInput({
       disabled={disabled}
       required={required}
       error={error}
-      helperText={helperText}
+      helperText={helper}
       fullWidth={fullWidth}
       multiline={rows !== undefined}
       minRows={rows}
-      slotProps={{ htmlInput: { readOnly: isReadOnly, 'aria-label': ariaLabel } }}
+      slotProps={{
+        input: { readOnly: isReadOnly },
+        htmlInput: { readOnly: isReadOnly, 'aria-label': ariaLabel, maxLength },
+      }}
     />
   );
 }

@@ -77,6 +77,8 @@ export interface MasterDataPageProps<T> {
   detailLayout?: 'auto' | 'panel' | 'drawer';
   /** Extra header actions (export, print). */
   secondaryActions?: ReactNode;
+  /** Leave the page (legacy Close). Shown as a quiet header button; asks first when there are unsaved changes. */
+  onClose?: () => void;
   'data-testid'?: string;
 }
 
@@ -90,7 +92,8 @@ function matches(text: string, query: string): boolean {
 
 /**
  * Template for master-data pages: searchable list + detail panel with view / edit / new modes, a dirty-state guard,
- * save/cancel conventions and keyboard shortcuts (/, Alt+N, Alt+E, Ctrl+S, Esc). See docs/19 section 3.1.
+ * save/cancel conventions and keyboard shortcuts (/, Alt+N, Alt+E, Ctrl+S, Esc; Enter in the search opens the record
+ * whose id was typed, or the only match). See docs/19 section 3.1.
  */
 export function MasterDataPage<T>({
   title,
@@ -120,6 +123,7 @@ export function MasterDataPage<T>({
   children,
   detailLayout = 'auto',
   secondaryActions,
+  onClose,
   'data-testid': testId,
 }: MasterDataPageProps<T>) {
   const theme = useTheme();
@@ -192,6 +196,17 @@ export function MasterDataPage<T>({
           label={`Search ${title.toLowerCase()}`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter opens the record whose id is the search text (type a code, press Enter), or the only match.
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+            const typed = query.trim().toLowerCase();
+            const target =
+              filtered.find((item) => getItemId(item).trim().toLowerCase() === typed) ??
+              (filtered.length === 1 ? filtered[0] : undefined);
+            if (!target) return;
+            e.preventDefault();
+            if (getItemId(target) !== selectedId) guard(() => onSelect(target));
+          }}
           slotProps={{
             input: {
               startAdornment: (
@@ -365,7 +380,18 @@ export function MasterDataPage<T>({
       title={title}
       context={context}
       width="full"
-      secondaryActions={secondaryActions}
+      secondaryActions={
+        secondaryActions || onClose ? (
+          <>
+            {secondaryActions}
+            {onClose ? (
+              <Button variant="text" onClick={() => guard(onClose)} disabled={saving}>
+                Close
+              </Button>
+            ) : null}
+          </>
+        ) : undefined
+      }
       primaryAction={
         onNew ? (
           <Button
