@@ -13,6 +13,7 @@ import { expect, test, type Page } from '@playwright/test';
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const apiURL = process.env.E2E_API_URL ?? 'http://localhost:5213';
 const token = process.env.E2E_DEV_TOKEN ?? '';
+const user = process.env.E2E_DEV_USER ?? '';
 const allowSave = process.env.E2E_ALLOW_SAVE === '1';
 const dc = process.env.E2E_DC ?? 'Aramex Fulfillment Centre';
 const rack = process.env.E2E_RACK ?? 'ZZT1';
@@ -27,12 +28,20 @@ async function isReachable(url: string): Promise<boolean> {
 }
 
 const ready =
-  token !== '' && (await isReachable(baseURL)) && (await isReachable(`${apiURL}/health/live`));
+  (token !== '' || user !== '') &&
+  (await isReachable(baseURL)) &&
+  (await isReachable(`${apiURL}/health/live`));
 
 async function signIn(page: Page) {
   await page.goto('/login');
-  await page.getByLabel('Dev bearer token').fill(token);
-  await page.getByRole('button', { name: 'Use dev token' }).click();
+  if (token) {
+    await page.getByLabel('Dev bearer token').fill(token);
+    await page.getByRole('button', { name: 'Use dev token' }).click();
+  } else {
+    await page.getByLabel('User name').fill(user);
+    await page.getByRole('button', { name: 'Get dev token' }).click();
+  }
+  await expect(page.getByRole('button', { name: 'Use dev token' })).toBeHidden();
 }
 
 /** Types into a numeric field and leaves it, which commits the value. */
@@ -60,7 +69,10 @@ function interceptSaves(page: Page, urlPart: string, methods: string[]) {
 }
 
 test.describe('File master pages, wave 1d', () => {
-  test.skip(!ready, `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN.`);
+  test.skip(
+    !ready,
+    `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN or E2E_DEV_USER.`,
+  );
 
   test('Rate Card Entry: three tables, Load Rates, New, material search', async ({ page }) => {
     await signIn(page);
@@ -102,34 +114,28 @@ test.describe('File master pages, wave 1d', () => {
     await signIn(page);
     await page.goto('/File/OkToLoadReason');
     await expect(
-      page.getByRole('heading', { name: 'Shipments Ok To Load / Hold Reasons' }),
+      page.getByRole('heading', { level: 1, name: 'OK-to-load and hold reasons' }),
     ).toBeVisible();
     // the first DC is selected and its reasons are loaded when the page opens
-    await expect(page.getByText('Reasons Data Loaded successfully')).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(page.getByTestId('reason-count')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('combobox', { name: 'DC' })).toHaveText(/\S/);
 
-    // a reason that contracts already carry cannot be removed
+    // a reason that contracts already carry cannot be removed: it says so instead of offering Remove
     await page.getByRole('combobox', { name: 'DC' }).click();
     await page.getByRole('option', { name: 'Zalora Online' }).click();
-    const table = page.getByRole('table', { name: 'Reasons Listing' });
-    await expect(table.getByRole('textbox', { name: 'Reason' }).first()).toBeVisible();
-    await table.getByRole('button', { name: 'Remove reason' }).first().click();
-    await expect(
-      page.getByText('This Reason is already allocated into Contracts. So not allow to Remove'),
-    ).toBeVisible();
+    await expect(page.getByText('Used by contracts').first()).toBeVisible();
 
     // add a reason to a DC that has none and save it
     await page.getByRole('combobox', { name: 'DC' }).click();
     await page.getByRole('option', { name: dc, exact: true }).click();
+    await expect(page.getByTestId('reason-count')).toBeVisible();
     await page.getByRole('button', { name: 'Add reason' }).click();
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Enter Reason')).toBeVisible();
-    await table.getByRole('textbox', { name: 'Reason' }).last().fill('ZZT1 A');
-    await table.getByRole('textbox', { name: 'Detail Reson' }).last().fill('detail A');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Data Saved Successfully')).toBeVisible();
+    await page.getByRole('button', { name: 'Save reasons' }).click();
+    await expect(page.getByTestId('save-problem')).toContainText('One reason has no text');
+    await page.getByRole('textbox', { name: 'Reason 1' }).fill('ZZT1 A');
+    await page.getByRole('textbox', { name: 'Details 1' }).fill('detail A');
+    await page.getByRole('button', { name: 'Save reasons' }).click();
+    await expect(page.getByTestId('save-result')).toContainText(`Saved 1 reason for ${dc}.`);
     if (!allowSave) {
       expect(posted).toEqual([{ dc, reasons: [{ reason: 'ZZT1 A', dtlReson: 'detail A' }] }]);
     } else {
@@ -138,15 +144,15 @@ test.describe('File master pages, wave 1d', () => {
       await expect(page.getByRole('combobox', { name: 'DC' })).toHaveText(/\S/);
       await page.getByRole('combobox', { name: 'DC' }).click();
       await page.getByRole('option', { name: dc, exact: true }).click();
-      const stored = table.getByRole('textbox', { name: 'Reason' }).first();
+      const stored = page.getByRole('textbox', { name: 'Reason 1' });
       await expect(stored).toHaveValue('ZZT1 A');
       await expect(stored).toHaveAttribute('readonly', '');
-      await table.getByRole('textbox', { name: 'Detail Reson' }).first().fill('detail A changed');
+      await page.getByRole('textbox', { name: 'Details 1' }).fill('detail A changed');
       await page.getByRole('button', { name: 'Add reason' }).click();
-      await table.getByRole('textbox', { name: 'Reason' }).last().fill('ZZT1 B');
-      await table.getByRole('textbox', { name: 'Detail Reson' }).last().fill('detail B');
-      await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully').last()).toBeVisible();
+      await page.getByRole('textbox', { name: 'Reason 2' }).fill('ZZT1 B');
+      await page.getByRole('textbox', { name: 'Details 2' }).fill('detail B');
+      await page.getByRole('button', { name: 'Save reasons' }).click();
+      await expect(page.getByTestId('save-result')).toContainText('Saved 2 reasons');
     }
   });
 

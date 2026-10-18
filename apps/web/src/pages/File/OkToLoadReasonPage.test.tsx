@@ -59,14 +59,22 @@ afterEach(() => {
 });
 
 const dcSelect = () => screen.getByRole('combobox', { name: 'DC' });
-const table = () => screen.getByRole('table', { name: 'Reasons Listing' });
-const bodyRows = () => within(table()).getAllByRole('row').slice(1, -1);
+const rowsShown = () => screen.queryAllByTestId('reason-row');
 const listCalls = () => calls.filter((c) => c.method === 'GET' && c.url === BASE);
 const writes = () => calls.filter((c) => c.method === 'PUT');
+const save = () => screen.getByRole('button', { name: 'Save reasons' });
+const reasonField = (n: number) => screen.getByRole('textbox', { name: `Reason ${n}` });
+const detailField = (n: number) => screen.getByRole('textbox', { name: `Details ${n}` });
 
 async function chooseDc(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.click(dcSelect());
   await user.click(await screen.findByRole('option', { name }));
+}
+
+async function openZalora(user: ReturnType<typeof userEvent.setup>) {
+  await waitFor(() => expect(listCalls()).toHaveLength(1));
+  await chooseDc(user, 'Zalora Online');
+  await waitFor(() => expect(rowsShown()).toHaveLength(2));
 }
 
 describe('OkToLoadReasonPage', () => {
@@ -74,7 +82,7 @@ describe('OkToLoadReasonPage', () => {
     setup();
 
     expect(
-      screen.getByRole('heading', { name: 'Shipments Ok To Load / Hold Reasons' }),
+      screen.getByRole('heading', { level: 1, name: 'OK-to-load and hold reasons' }),
     ).toBeInTheDocument();
     await waitFor(() => expect(dcSelect()).toHaveTextContent('Aramex Fulfillment Centre'));
     await waitFor(() => expect(listCalls()).toHaveLength(1));
@@ -82,84 +90,96 @@ describe('OkToLoadReasonPage', () => {
       dc: 'Aramex Fulfillment Centre',
       checkAllocation: true,
     });
-    expect(await screen.findByText('Reasons Data Loaded successfully')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Reasons Listing' })).toBeInTheDocument();
     expect(
-      within(table())
+      await screen.findByText('No reasons for Aramex Fulfillment Centre yet'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('reason-count')).toHaveTextContent('0 reasons');
+    expect(
+      within(screen.getByRole('table', { name: 'Reasons' }))
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['', 'Reason', 'Detail Reson']);
-    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    ).toEqual(['No', 'Reason', 'Details', 'Actions']);
   });
 
-  it('shows the reasons of the chosen DC in order, stored reasons read-only, blank reasons hidden', async () => {
+  it('shows the reasons of the chosen DC in order, stored reasons read-only, used ones locked, blank ones hidden', async () => {
     const user = userEvent.setup();
     setup();
-    await waitFor(() => expect(listCalls()).toHaveLength(1));
-    await chooseDc(user, 'Zalora Online');
+    await openZalora(user);
 
-    await waitFor(() => expect(bodyRows()).toHaveLength(2));
-    const [first, second] = bodyRows();
-    expect(within(first).getByRole('textbox', { name: 'Reason' })).toHaveValue(
-      'data needs loading',
-    );
-    expect(within(first).getByRole('textbox', { name: 'Reason' })).toHaveAttribute('readonly');
-    expect(within(first).getByRole('textbox', { name: 'Detail Reson' })).toHaveValue(
-      'Needs loading',
-    );
-    expect(within(second).getByRole('textbox', { name: 'Reason' })).toHaveValue('no data');
+    expect(reasonField(1)).toHaveValue('data needs loading');
+    expect(reasonField(1)).toHaveAttribute('readonly');
+    expect(detailField(1)).toHaveValue('Needs loading');
+    expect(reasonField(2)).toHaveValue('no data');
+    const [first, second] = rowsShown();
+    // the allocated reason cannot be removed: it says why instead of offering the button
+    expect(within(first).getByText('Used by contracts')).toBeInTheDocument();
+    expect(within(first).queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(within(second).getByRole('button', { name: 'Remove no data' })).toBeInTheDocument();
+    expect(screen.getByTestId('reason-count')).toHaveTextContent('2 reasons');
     expect(listCalls()[1].params).toEqual({ dc: 'Zalora Online', checkAllocation: true });
   });
 
   it('empties the list when the DC changes and loads the other DC', async () => {
     const user = userEvent.setup();
     setup();
-    await waitFor(() => expect(listCalls()).toHaveLength(1));
-    await chooseDc(user, 'Zalora Online');
-    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await openZalora(user);
 
     await chooseDc(user, 'Aramex Fulfillment Centre');
 
-    await waitFor(() => expect(bodyRows()).toHaveLength(0));
+    await waitFor(() => expect(rowsShown()).toHaveLength(0));
     expect(listCalls()).toHaveLength(3);
   });
 
-  it('refuses to remove a reason contracts already carry and removes the others', async () => {
+  it('asks before a DC change throws away unsaved changes', async () => {
     const user = userEvent.setup();
     setup();
-    await waitFor(() => expect(listCalls()).toHaveLength(1));
-    await chooseDc(user, 'Zalora Online');
-    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await openZalora(user);
+    await user.type(detailField(2), ' more');
+    expect(screen.getByTestId('change-summary')).toHaveTextContent('1 changed');
 
-    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Remove reason' }));
-    expect(
-      await screen.findByText(
-        'This Reason is already allocated into Contracts. So not allow to Remove',
-      ),
-    ).toBeInTheDocument();
-    expect(bodyRows()).toHaveLength(2);
+    await chooseDc(user, 'Aramex Fulfillment Centre');
+    const dialog = await screen.findByRole('dialog', { name: 'Discard unsaved changes?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(dcSelect()).toHaveTextContent('Zalora Online');
+    expect(detailField(2)).toHaveValue('No data available more');
 
-    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Remove reason' }));
-    expect(bodyRows()).toHaveLength(1);
+    await chooseDc(user, 'Aramex Fulfillment Centre');
+    await user.click(await screen.findByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(rowsShown()).toHaveLength(0));
   });
 
-  it('adds an editable row, saves the whole list in order and shows the legacy success text', async () => {
+  it('removes a reason with Undo until it is saved', async () => {
     const user = userEvent.setup();
     setup();
-    await waitFor(() => expect(listCalls()).toHaveLength(1));
-    await chooseDc(user, 'Zalora Online');
-    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await openZalora(user);
+
+    await user.click(screen.getByRole('button', { name: 'Remove no data' }));
+    expect(rowsShown()).toHaveLength(1);
+    expect(screen.getByTestId('removed-hint')).toHaveTextContent('Removed “no data”.');
+    expect(screen.getByTestId('change-summary')).toHaveTextContent('1 removed');
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(rowsShown()).toHaveLength(2);
+    expect(reasonField(2)).toHaveValue('no data');
+    expect(screen.queryByTestId('change-summary')).toBeNull();
+  });
+
+  it('adds an editable row, saves the whole list in order and says what was saved', async () => {
+    const user = userEvent.setup();
+    setup();
+    await openZalora(user);
 
     await user.click(screen.getByRole('button', { name: 'Add reason' }));
-    const added = bodyRows()[2];
-    expect(within(added).getByRole('textbox', { name: 'Reason' })).not.toHaveAttribute('readonly');
-    await user.type(within(added).getByRole('textbox', { name: 'Reason' }), 'new reason');
-    await user.type(within(added).getByRole('textbox', { name: 'Detail Reson' }), 'new detail');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(reasonField(3)).toHaveFocus());
+    expect(reasonField(3)).not.toHaveAttribute('readonly');
+    await user.type(reasonField(3), 'new reason');
+    await user.type(detailField(3), 'new detail');
+    expect(screen.getByTestId('change-summary')).toHaveTextContent('1 added');
+    await user.click(save());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
-    expect(writes()).toHaveLength(1);
+    expect(await screen.findByTestId('save-result')).toHaveTextContent(
+      'Saved 3 reasons for Zalora Online.',
+    );
     expect(writes()[0].body).toEqual({
       dc: 'Zalora Online',
       reasons: [
@@ -168,16 +188,21 @@ describe('OkToLoadReasonPage', () => {
         { reason: 'new reason', dtlReson: 'new detail' },
       ],
     });
+    // the saved reason keeps its text from now on (a reload would show it read-only too)
+    expect(reasonField(3)).toHaveAttribute('readonly');
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
   });
 
-  it('does not save a blank reason', async () => {
+  it('does not save a blank reason and puts the cursor in it', async () => {
     const user = userEvent.setup();
     setup();
     await waitFor(() => expect(listCalls()).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: 'Add reason' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(save());
 
-    expect(await screen.findByText('Enter Reason')).toBeInTheDocument();
+    expect(screen.getByTestId('save-problem')).toHaveTextContent('One reason has no text');
+    expect(reasonField(1)).toHaveAccessibleDescription('Enter the reason');
+    expect(reasonField(1)).toHaveFocus();
     expect(writes()).toHaveLength(0);
   });
 
@@ -192,46 +217,56 @@ describe('OkToLoadReasonPage', () => {
     });
     setup();
     await waitFor(() => expect(listCalls()).toHaveLength(1));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(save());
 
-    expect(
-      await screen.findByText('Data not Saved [Contract Data not found.[Empty List]]'),
-    ).toBeInTheDocument();
+    const error = await screen.findByTestId('save-error');
+    expect(error).toHaveTextContent('Data not saved');
+    expect(error).toHaveTextContent('Contract Data not found.[Empty List]');
     expect(writes()).toHaveLength(1);
   });
 
-  it('maps a 409 to the allocated-reason message', async () => {
+  it('explains a 409 (a reason contracts use was left out)', async () => {
     const user = userEvent.setup();
     saveReply = () => ({ status: 409, data: { code: 'REASON_ALLOCATED' } });
     setup();
     await waitFor(() => expect(listCalls()).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: 'Add reason' }));
-    await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'x');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.type(reasonField(1), 'x');
+    await user.click(save());
 
-    expect(
-      await screen.findByText(
-        'This Reason is already allocated into Contracts. So not allow to Remove',
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('save-error')).toHaveTextContent(
+      'A reason that contracts already use was left out. Nothing was changed.',
+    );
   });
 
-  it('says so when the reasons cannot be loaded', async () => {
+  it('says so when the reasons cannot be loaded, with Try again', async () => {
     listReply = () => ({ status: 500, data: {} });
     setup();
 
-    expect(
-      await screen.findByText('Something went wrong.Please contact administrator'),
-    ).toBeInTheDocument();
+    const error = await screen.findByRole('alert');
+    expect(error).toHaveTextContent('The reasons could not be loaded');
+    expect(within(error).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
-  it('with no DC to select Save says "DC not selected"', async () => {
+  it('with no DC to choose Save says to choose the DC first', async () => {
     const user = userEvent.setup();
     setup([]);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText('Choose a DC');
+    await user.click(save());
 
-    expect(await screen.findByText('DC not selected')).toBeInTheDocument();
+    expect(screen.getByTestId('save-problem')).toHaveTextContent('Choose the DC first');
     expect(writes()).toHaveLength(0);
+  });
+
+  it('saves with Ctrl+S and adds a row with Alt+R', async () => {
+    const user = userEvent.setup();
+    setup();
+    await openZalora(user);
+
+    await user.keyboard('{Alt>}r{/Alt}');
+    await waitFor(() => expect(reasonField(3)).toHaveFocus());
+    await user.keyboard('third');
+    await user.keyboard('{Control>}s{/Control}');
+    expect(await screen.findByTestId('save-result')).toHaveTextContent('Saved 3 reasons');
   });
 });
