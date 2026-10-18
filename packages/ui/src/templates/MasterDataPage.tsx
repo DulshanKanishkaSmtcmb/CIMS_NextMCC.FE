@@ -414,6 +414,8 @@ export function MasterDataPage<T>({
             anchor="right"
             open={mode !== 'idle'}
             onClose={() => guard(onCancel)}
+            // Above the application's top bar (app shells put it over drawers), like any modal.
+            sx={(t) => ({ zIndex: t.zIndex.modal })}
             slotProps={{ paper: { sx: { width: { xs: '100%', sm: 560 }, p: 1 } } }}
           >
             {detail}

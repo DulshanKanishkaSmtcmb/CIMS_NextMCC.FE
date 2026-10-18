@@ -60,7 +60,7 @@ export function TextInput({
   const helper = counted ? (
     <Box component="span" sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
       <span>{helperText}</span>
-      <Box component="span" sx={{ flex: 'none', fontVariantNumeric: 'tabular-nums' }}>
+      <Box component="span" aria-hidden sx={{ flex: 'none', fontVariantNumeric: 'tabular-nums' }}>
         {`${value.length}/${maxLength}`}
       </Box>
     </Box>

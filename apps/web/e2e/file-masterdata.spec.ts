@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * /File/Country, /File/Ports and /File/DC (legacy docs/15): open each page, list from the search dialogs, and save.
- * Needs the SPA (`npm run dev`, with VITE_API_BASE_URL pointing at the API), the API with a Test database, and a
- * DevJwt token for a PwInfo user in E2E_DEV_TOKEN. Skips when any of them is missing.
+ * /File/Country, /File/Ports and /File/DC (legacy docs/15, redesign docs/19 section 14): open each page, find a
+ * record, check the validation messages, and save. Needs the SPA (`npm run dev`, with VITE_API_BASE_URL or
+ * DEV_API_PROXY_TARGET pointing at the API), the API with a Test database, and a DevJwt token for a PwInfo user in
+ * E2E_DEV_TOKEN or a PwInfo user name in E2E_DEV_USER. Skips when any of them is missing. Selectors: roles, labels
+ * and data-testid (the redesigned pages have no legacy element ids).
  *
  * Saves are intercepted and answered locally unless E2E_ALLOW_SAVE=1. With E2E_ALLOW_SAVE=1 the test really creates
  * and then changes one clearly named row per page (E2E_ROW, default "ZZT1") in the Test database; delete them again
@@ -12,6 +14,7 @@ import { expect, test, type Page } from '@playwright/test';
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const apiURL = process.env.E2E_API_URL ?? 'http://localhost:5213';
 const token = process.env.E2E_DEV_TOKEN ?? '';
+const user = process.env.E2E_DEV_USER ?? '';
 const allowSave = process.env.E2E_ALLOW_SAVE === '1';
 const row = process.env.E2E_ROW ?? 'ZZT1';
 // E2E_PHASE=new or change runs only that half of the saving flow (to snapshot the database in between).
@@ -29,12 +32,20 @@ async function isReachable(url: string): Promise<boolean> {
 }
 
 const ready =
-  token !== '' && (await isReachable(baseURL)) && (await isReachable(`${apiURL}/health/live`));
+  (token !== '' || user !== '') &&
+  (await isReachable(baseURL)) &&
+  (await isReachable(`${apiURL}/health/live`));
 
 async function signIn(page: Page) {
   await page.goto('/login');
-  await page.getByLabel('Dev bearer token').fill(token);
-  await page.getByRole('button', { name: 'Use dev token' }).click();
+  if (token) {
+    await page.getByLabel('Dev bearer token').fill(token);
+    await page.getByRole('button', { name: 'Use dev token' }).click();
+  } else {
+    await page.getByLabel('User name').fill(user);
+    await page.getByRole('button', { name: 'Get dev token' }).click();
+  }
+  await expect(page.getByRole('button', { name: 'Use dev token' })).toBeHidden();
 }
 
 async function chooseOption(page: Page, option: string) {
@@ -76,46 +87,53 @@ function interceptSaves(page: Page, urlPart: string) {
 }
 
 test.describe('File master pages', () => {
-  test.skip(!ready, `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN.`);
+  test.skip(
+    !ready,
+    `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN or E2E_DEV_USER.`,
+  );
 
   test('Country: list, validation messages, new and change', async ({ page }) => {
     const posted = interceptSaves(page, '/master-data/countries');
     await signIn(page);
     await page.goto('/File/Country');
-    await expect(page.getByRole('heading', { name: 'Country Master Details' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Countries' })).toBeVisible();
 
-    // The listing dialog shows every Country column; New mode does not fill the form from it.
-    await page.locator('#btnCountryCode').click();
-    const dialog = page.getByRole('dialog', { name: 'Countries Listing' });
-    await expect(dialog.getByText('CargoMovement').first()).toBeVisible({ timeout: 20_000 }); // first call can be slow
-    await expect(dialog.getByText('INDIA')).toBeVisible();
-    await dialog.getByRole('button', { name: 'Close' }).click();
+    // The list is the way to find a country (it replaced the Option select and the "Countries Listing" dialog).
+    const list = page.getByRole('list', { name: 'Countries' });
+    await expect(list.getByRole('button', { name: /INDIA/ })).toBeVisible({ timeout: 20_000 }); // first call can be slow
+    const search = page.getByRole('searchbox', { name: 'Search countries' });
+    await search.fill('IND');
+    await search.press('Enter');
+    await expect(page.getByRole('textbox', { name: 'Country name' })).toHaveValue('INDIA');
+    await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0); // view mode has no Save
+    await search.fill('');
 
     if (runNew) {
+      await page.getByRole('button', { name: 'New country' }).first().click();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Enter Country Name')).toBeVisible();
-      await page.locator('#CountryName').fill(`${row} COUNTRY`);
-      await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Enter Country Code')).toBeVisible();
+      const problems = page.getByTestId('save-problems');
+      await expect(problems).toContainText('Enter the country name');
+      await expect(problems).toContainText('Enter the country code');
 
-      await page.locator('#CountryCode').fill(row);
-      await page.locator('#CountryName').fill(`${row} COUNTRY`);
-      await page.getByRole('combobox', { name: 'Cargo Movement' }).click();
-      await page.getByRole('option', { name: 'Imports' }).click();
+      await page.getByRole('textbox', { name: 'Country code' }).fill(row);
+      await page.getByRole('textbox', { name: 'Country name' }).fill(`${row} COUNTRY`);
+      await page.getByRole('button', { name: 'Imports', exact: true }).click();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+      await expect(page.getByTestId('save-result')).toContainText(`Country ${row} created.`);
+      await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
     }
 
     if (runChange) {
-      await chooseOption(page, 'Change');
-      await pickFromDialog(page, 'btnCountryCode', 'Countries Listing', 'CountryCode', row);
-      await expect(page.locator('#CountryName')).toHaveValue(`${row} COUNTRY`);
-      await page.locator('#CountryName').fill(`${row} COUNTRY CHANGED`);
-      await page.getByRole('combobox', { name: 'Cargo Movement' }).click();
-      await page.getByRole('option', { name: 'Export' }).click();
+      await search.fill(row);
+      await search.press('Enter');
+      await expect(page.getByRole('textbox', { name: 'Country name' })).toHaveValue(
+        `${row} COUNTRY`,
+      );
+      await page.getByRole('button', { name: 'Edit' }).click();
+      await page.getByRole('textbox', { name: 'Country name' }).fill(`${row} COUNTRY CHANGED`);
+      await page.getByRole('button', { name: 'Export', exact: true }).click();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully').last()).toBeVisible();
+      await expect(page.getByTestId('save-result')).toContainText(`Country ${row} saved.`);
     } else if (!allowSave) {
       expect(posted[0]).toEqual({
         countryCode: row,
