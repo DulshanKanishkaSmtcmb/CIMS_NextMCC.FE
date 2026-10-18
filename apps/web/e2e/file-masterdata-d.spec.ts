@@ -74,39 +74,28 @@ test.describe('File master pages, wave 1d', () => {
     `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN or E2E_DEV_USER.`,
   );
 
-  test('Rate Card Entry: three tables, Load Rates, New, material search', async ({ page }) => {
+  test('Rate Card: three read-only tables, filters, Reload rates', async ({ page }) => {
     await signIn(page);
     await page.goto('/File/RateCardEntry');
-    await expect(page.getByRole('heading', { name: 'Rate Card Entry' })).toBeVisible();
-    for (const title of [
-      'Rate Structure - Export Clearance Charges',
-      'Rate Structure - Export Freight Charges',
-      'Rate Structure - CFS Charges',
-    ]) {
-      await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Rate card' })).toBeVisible();
+    await expect(page.getByText('Read only', { exact: true })).toBeVisible();
+    for (const title of ['Export clearance charges', 'Export freight charges', 'CFS charges']) {
+      await expect(page.getByRole('heading', { level: 2, name: title })).toBeVisible();
     }
-    const clearance = page.getByRole('table', { name: 'Export Clearance Charges' });
+    const clearance = page.getByRole('table', { name: 'Export clearance charges' });
     await expect(clearance).toBeVisible({ timeout: 15_000 });
     await expect(clearance.getByRole('cell', { name: '20GP' })).toBeVisible();
-    await expect(clearance.getByRole('textbox', { name: 'Rate[USD]' }).first()).toHaveValue('700');
-    const cfs = page.getByRole('table', { name: 'CFS Charges' });
-    await expect(cfs.getByRole('row')).toHaveCount(11); // header + the 10 stored charges
+    await expect(clearance.getByRole('cell', { name: '700.00' })).toBeVisible();
+    const cfs = page.getByTestId('cfs-grid');
+    await expect(cfs.locator('[role="row"][data-id]')).toHaveCount(10); // the 10 stored charges
 
-    // Material Code search: only rows of a material table can search; Select fills the code and the name
-    const material = cfs.getByRole('row').nth(3); // C0003 Cartons (Material)
-    await material.getByRole('button', { name: 'Search' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Packing Material Master Listing' });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Select' }).first().click();
-    await expect(dialog).toBeHidden();
-    await expect(material.getByRole('textbox', { name: 'Material Name' })).not.toHaveValue('');
+    // the freight table lists every port × container type; the filter keeps the ones with a rate
+    const freight = page.getByTestId('freight-grid');
+    await page.getByRole('checkbox', { name: /Only ports with a rate/ }).check();
+    await expect(freight.locator('[role="row"][data-id]')).toHaveCount(6);
 
-    await page.getByRole('button', { name: 'Load Rates' }).click();
-    await expect(cfs.getByRole('row')).toHaveCount(11); // replaced, not appended
-    await page.getByRole('button', { name: 'New' }).click();
-    await expect(clearance).toBeHidden();
-    await page.getByRole('button', { name: 'Load Rates' }).click();
-    await expect(page.getByRole('table', { name: 'CFS Charges' })).toBeVisible();
+    await page.getByRole('button', { name: 'Reload rates' }).click();
+    await expect(cfs.locator('[role="row"][data-id]')).toHaveCount(10); // replaced, not appended
   });
 
   test('OK-to-Load Reason: first DC, allocated reason, new reason and save', async ({ page }) => {
