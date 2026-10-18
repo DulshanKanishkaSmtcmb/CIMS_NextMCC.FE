@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/dist-types
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+.git
+.github
+.vscode
+.idea
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+README.md

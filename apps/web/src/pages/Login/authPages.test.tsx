@@ -1,0 +1,112 @@
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Route, Routes } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithProviders } from '../../test/renderWithProviders';
+
+const { signinRedirect, signinCallback, create } = vi.hoisted(() => ({
+  signinRedirect: vi.fn(),
+  signinCallback: vi.fn(),
+  create: vi.fn(),
+}));
+
+vi.mock('../../auth/userManager', () => ({
+  userManager: { signinRedirect, signinCallback },
+}));
+
+vi.mock('@cims/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@cims/api-client')>()),
+  legacySession: { create },
+}));
+
+import { AuthCallbackPage } from '../AuthCallback/AuthCallbackPage';
+import { LoginPage } from './LoginPage';
+
+beforeEach(() => {
+  signinRedirect.mockReset().mockResolvedValue(undefined);
+  signinCallback.mockReset();
+  create.mockReset();
+});
+
+describe('LoginPage', () => {
+  it('starts the Identity redirect and passes the return path in the OIDC state', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<LoginPage />, {
+      route: '/login',
+      preloadedState: { auth: { status: 'unauthenticated', profile: null, allowedTenants: [] } },
+    });
+
+    await user.click(screen.getByRole('button', { name: /sign in with cims identity/i }));
+
+    expect(signinRedirect).toHaveBeenCalledWith({ state: { returnTo: '/Home/Index' } });
+  });
+
+  it('shows an error when the redirect cannot start', async () => {
+    const user = userEvent.setup();
+    signinRedirect.mockRejectedValue(new Error('metadata unreachable'));
+    renderWithProviders(<LoginPage />, {
+      route: '/login',
+      preloadedState: { auth: { status: 'unauthenticated', profile: null, allowedTenants: [] } },
+    });
+
+    await user.click(screen.getByRole('button', { name: /sign in with cims identity/i }));
+
+    expect(await screen.findByText('metadata unreachable')).toBeInTheDocument();
+  });
+});
+
+describe('AuthCallbackPage', () => {
+  const user = {
+    profile: { sub: 'u1', name: 'Ann', preferred_username: 'ann', tenants: ['MCC', 'CFS'] },
+    state: { returnTo: '/Data/ConfirmArrival' },
+  };
+
+  function renderCallback() {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        <Route path="/Data/ConfirmArrival" element={<div>arrival page</div>} />
+        <Route path="/Home/Index" element={<div>home page</div>} />
+        <Route path="/login" element={<div>login page</div>} />
+      </Routes>,
+      { route: '/auth/callback?code=abc&state=xyz' },
+    );
+  }
+
+  it('signs in, keeps only the profile in Redux, treats 501 as not available, and returns to the saved path', async () => {
+    signinCallback.mockResolvedValue(user);
+    create.mockResolvedValue({ available: false, status: 501 });
+
+    const { store } = renderCallback();
+
+    expect(await screen.findByText('arrival page')).toBeInTheDocument();
+    expect(create).toHaveBeenCalledTimes(1);
+    const state = store.getState();
+    expect(state.auth.status).toBe('authenticated');
+    expect(state.auth.profile?.name).toBe('Ann');
+    expect(state.tenant.selectedTenantId).toBe('MCC');
+    expect(JSON.stringify(state)).not.toMatch(/access_token|id_token|refresh_token/);
+  });
+
+  it('still signs the user in when the legacy session call fails', async () => {
+    signinCallback.mockResolvedValue({ ...user, state: undefined });
+    create.mockRejectedValue(new Error('network'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    renderCallback();
+
+    expect(await screen.findByText('home page')).toBeInTheDocument();
+    warn.mockRestore();
+  });
+
+  it('shows the failure and a way back when the callback is rejected', async () => {
+    signinCallback.mockRejectedValue(new Error('invalid_grant'));
+
+    renderCallback();
+
+    expect(await screen.findByText('invalid_grant')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Back to sign in' }));
+    await waitFor(() => expect(screen.getByText('login page')).toBeInTheDocument());
+    expect(create).not.toHaveBeenCalled();
+  });
+});

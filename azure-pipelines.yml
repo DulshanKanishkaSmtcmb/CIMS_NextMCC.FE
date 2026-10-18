@@ -1,0 +1,116 @@
+# Adapted from CIMS.Identity.FE/azure-pipelines.yml.
+# Differences: a Verify stage (lint, test, build) runs first, the image is built from the monorepo root with
+# apps/web/Dockerfile, and the build arguments are the Vite variables of this SPA.
+#
+# NOT RUN YET. Every value marked PLACEHOLDER must be confirmed with whoever owns the servers and
+# the Identity registration before the first run.
+
+trigger:
+  branches:
+    include:
+      - main
+      - uat
+      - dev
+
+variables:
+  feRepository: speedmark-transportation-lanka-pvt-ltd/cims-nextmcc-fe
+  buildContext: $(Build.SourcesDirectory)
+
+stages:
+  - stage: Verify
+    displayName: Lint, test and build
+    jobs:
+      - job: Verify
+        displayName: Verify workspace
+        pool:
+          name: Default
+        steps:
+          - task: NodeTool@0
+            displayName: Use Node 24
+            inputs:
+              versionSpec: '24.x'
+          - script: npm ci
+            displayName: Install dependencies
+          - script: npm run lint
+            displayName: Lint
+          - script: npm test
+            displayName: Unit tests
+          - script: npm run build
+            displayName: Build
+
+  - stage: BuildAndDeploy
+    displayName: Build, push and deploy front end image
+    dependsOn: Verify
+    jobs:
+      - job: Lifecycle
+        displayName: Environment deployment lifecycle
+        pool:
+          name: Default # Same self-hosted agent pool as the other CIMS front ends
+
+        variables:
+          ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/dev') }}:
+            targetPath: /systems/smt/dev
+            projectName: cims-nextmcc-dev
+            envPort: 8081 # PLACEHOLDER: gateway port, same as the other dev stacks
+            fePort: 3011 # PLACEHOLDER: free host port for this container
+            apiUrl: '' # Empty = same origin through the gateway
+            identityAuthority: 'https://identity-dev.example.invalid' # PLACEHOLDER
+          ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/uat') }}:
+            targetPath: /systems/smt/uat
+            projectName: cims-nextmcc-uat
+            envPort: 8082
+            fePort: 3012
+            apiUrl: ''
+            identityAuthority: 'https://identity-uat.example.invalid' # PLACEHOLDER
+          ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
+            targetPath: /systems/smt/prod
+            projectName: cims-nextmcc-prod
+            envPort: 8083
+            fePort: 3013
+            apiUrl: ''
+            identityAuthority: 'https://identity.example.invalid' # PLACEHOLDER
+
+        steps:
+          - task: Docker@2
+            displayName: Login to GHCR
+            inputs:
+              containerRegistry: 'CIMS-GHCR-Connection'
+              command: 'login'
+
+          - task: Bash@3
+            displayName: Build and push image
+            inputs:
+              targetType: 'inline'
+              script: |
+                docker build \
+                  --network=host \
+                  --build-arg VITE_API_BASE_URL="$(apiUrl)" \
+                  --build-arg VITE_IDENTITY_AUTHORITY="$(identityAuthority)" \
+                  --build-arg VITE_CLIENT_ID="cims-nextmcc-spa" \
+                  -t ghcr.io/$(feRepository):latest \
+                  -t ghcr.io/$(feRepository):$(Build.BuildId) \
+                  -f $(buildContext)/apps/web/Dockerfile $(buildContext)
+
+                docker push ghcr.io/$(feRepository):latest
+                docker push ghcr.io/$(feRepository):$(Build.BuildId)
+
+          - task: Bash@3
+            displayName: Deploy front end service
+            inputs:
+              targetType: 'inline'
+              script: |
+                # ASSUMPTION (PLACEHOLDER): the shared stack in $(targetPath) already has a compose file that
+                # defines a service named cims-nextmcc-fe using ghcr.io/$(feRepository):latest. This repo
+                # does not own that compose file, so only the one service is refreshed here.
+                if [ ! -f "$(targetPath)/docker-compose.yml" ]; then
+                  echo "##vso[task.logissue type=warning]No docker-compose.yml in $(targetPath). Image was pushed, nothing deployed."
+                  exit 0
+                fi
+
+                export APP_EXTERNAL_PORT=$(envPort)
+                export FE_EXTERNAL_PORT=$(fePort)
+                export PROJECT_NAME=$(projectName)
+
+                cd "$(targetPath)"
+                docker compose pull cims-nextmcc-fe
+                docker compose up -d --force-recreate cims-nextmcc-fe
