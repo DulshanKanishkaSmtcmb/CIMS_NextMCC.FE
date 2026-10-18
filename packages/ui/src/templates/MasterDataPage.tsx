@@ -39,6 +39,8 @@ export interface MasterDataPageProps<T> {
   context?: ReactNode;
   /** Singular, lower case, used in labels and messages: "country". */
   entityName: string;
+  /** Plural inside sentences ("Search countries", "No DCs yet"). Default: the title in lower case. */
+  pluralName?: string;
   items: readonly T[];
   getItemId: (item: T) => string;
   renderItem: (item: T) => MasterDataListItem;
@@ -99,6 +101,7 @@ export function MasterDataPage<T>({
   title,
   context,
   entityName,
+  pluralName,
   items,
   getItemId,
   renderItem,
@@ -129,6 +132,7 @@ export function MasterDataPage<T>({
   const theme = useTheme();
   const wide = useMediaQuery(theme.breakpoints.up('md'), { noSsr: true });
   const asDrawer = detailLayout === 'drawer' || (detailLayout === 'auto' && !wide);
+  const plural = pluralName ?? title.toLowerCase();
 
   const [innerSearch, setInnerSearch] = useState('');
   const query = search ?? innerSearch;
@@ -193,7 +197,7 @@ export function MasterDataPage<T>({
           inputRef={searchRef}
           type="search"
           fullWidth
-          label={`Search ${title.toLowerCase()}`}
+          label={`Search ${plural}`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -240,13 +244,13 @@ export function MasterDataPage<T>({
           </Box>
         ) : listLoading ? (
           <Box sx={{ p: 2 }}>
-            <ListSkeleton label={`Loading ${title.toLowerCase()}`} />
+            <ListSkeleton label={`Loading ${plural}`} />
           </Box>
         ) : filtered.length === 0 ? (
           query.trim() ? (
             <EmptyState
               size="compact"
-              title={`No ${title.toLowerCase()} match “${query.trim()}”`}
+              title={`No ${plural} match “${query.trim()}”`}
               description="Check the spelling or search by code."
               action={
                 <Button variant="outlined" onClick={() => setQuery('')}>
@@ -257,7 +261,7 @@ export function MasterDataPage<T>({
           ) : (
             <EmptyState
               size="compact"
-              title={`No ${title.toLowerCase()} yet`}
+              title={`No ${plural} yet`}
               description={onNew ? `Create the first ${entityName} with ${newLabel}.` : undefined}
             />
           )

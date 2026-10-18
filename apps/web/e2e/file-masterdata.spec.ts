@@ -48,33 +48,12 @@ async function signIn(page: Page) {
   await expect(page.getByRole('button', { name: 'Use dev token' })).toBeHidden();
 }
 
-async function chooseOption(page: Page, option: string) {
-  await page.getByRole('combobox', { name: 'Option' }).click();
-  await page.getByRole('option', { name: option }).click();
-}
-
 /** The country lookup inside a form: search button, filter the code column, select the first row. */
 async function pickCountry(page: Page, code: string) {
   await page.getByRole('button', { name: 'Search countries' }).click();
   const dialog = page.getByRole('dialog', { name: 'Countries' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('textbox', { name: 'Search Country code', exact: true }).fill(code);
-  await dialog.getByRole('button', { name: 'Select' }).first().click();
-  await expect(dialog).toBeHidden();
-}
-
-/** Opens a list dialog, filters the first column to `text`, and selects the only row. */
-async function pickFromDialog(
-  page: Page,
-  buttonId: string,
-  title: string,
-  firstColumn: string,
-  text: string,
-) {
-  await page.locator(`#${buttonId}`).click();
-  const dialog = page.getByRole('dialog', { name: title });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('textbox', { name: `Search ${firstColumn}`, exact: true }).fill(text);
   await dialog.getByRole('button', { name: 'Select' }).first().click();
   await expect(dialog).toBeHidden();
 }
@@ -203,30 +182,34 @@ test.describe('File master pages', () => {
     const posted = interceptSaves(page, '/master-data/dcs');
     await signIn(page);
     await page.goto('/File/DC');
-    await expect(page.getByRole('heading', { name: 'DC Master Details' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'DCs' })).toBeVisible();
+    const list = page.getByRole('list', { name: 'DCs' });
+    await expect(list.getByRole('button').first()).toBeVisible({ timeout: 20_000 });
 
-    await page.locator('#btnDc').click();
-    const dialog = page.getByRole('dialog', { name: 'DC Listing' });
-    await expect(dialog.getByText('StockUpdate').first()).toBeVisible();
-    await dialog.getByRole('button', { name: 'Close' }).click();
+    // Every DestWarehouse column is still visible for reference, in the open DC's settings.
+    await list.getByRole('button').first().click();
+    await expect(page.getByTestId('dc-settings')).toContainText('Stock update');
 
     if (runNew) {
+      await page.getByRole('button', { name: 'New DC' }).first().click();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Enter DC Name')).toBeVisible();
+      await expect(page.getByTestId('save-problems')).toContainText('Enter the DC name');
 
-      await page.locator('#WhDes').fill(`${row} DC`);
-      await pickFromDialog(page, 'btnCountryCode', 'Countries Listing', 'CountryCode', 'IND');
+      await page.getByRole('textbox', { name: 'DC name' }).fill(`${row} DC`);
+      await pickCountry(page, 'IND');
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully')).toBeVisible();
+      await expect(page.getByTestId('save-result')).toContainText(`DC ${row} DC created.`);
     }
 
     if (runChange) {
-      await chooseOption(page, 'Change');
-      await pickFromDialog(page, 'btnDc', 'DC Listing', 'WhDes', `${row} DC`);
-      await expect(page.locator('#CountryCode')).toHaveValue('IND');
-      await pickFromDialog(page, 'btnCountryCode', 'Countries Listing', 'CountryCode', 'PAK');
+      const search = page.getByRole('searchbox', { name: 'Search DCs' });
+      await search.fill(`${row} DC`);
+      await search.press('Enter');
+      await expect(page.getByRole('textbox', { name: 'Country' })).toHaveValue('IND');
+      await page.getByRole('button', { name: 'Edit' }).click();
+      await pickCountry(page, 'PAK');
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully').last()).toBeVisible();
+      await expect(page.getByTestId('save-result')).toContainText(`DC ${row} DC saved.`);
     } else if (!allowSave) {
       expect(posted[0]).toEqual({ whDes: `${row} DC`, countryCode: 'IND' });
     }

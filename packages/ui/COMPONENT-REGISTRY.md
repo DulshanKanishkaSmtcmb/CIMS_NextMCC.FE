@@ -272,7 +272,7 @@ The design rules behind these are in the legacy workspace `docs/19-ux-design-pri
 
 - **Purpose:** Template for master-data pages: searchable list + detail panel (drawer below `md`) with `idle`/`view`/`edit`/`new` modes, a dirty-state guard (ConfirmDialog "Discard unsaved changes?" with focus on "Keep editing", plus the browser's `beforeunload` prompt), Cancel/Save conventions, a mode chip, and keyboard shortcuts with a legend (`/` search, Alt+N new, Alt+E edit, Ctrl+S save, Esc cancel).
 - **Wraps:** `PageShell`, `TextField` (search), `List`/`ListItemButton`, `Drawer`, `ConfirmDialog`, `EmptyState`, `ErrorState`, `ListSkeleton`/`FormSkeleton`, `StatusChip`, `ShortcutsLegend`, `useMediaQuery`.
-- **Key props:** `title` (plural), `entityName` (singular, lower case), `items`, `getItemId`, `renderItem → { primary, secondary?, meta? }`, `getSearchText` (every search word must occur), `search?`/`onSearchChange?`, `listLoading?`, `listError?`, `onRetryList?`, `selectedId`, `onSelect`, `mode`, `onNew?`, `onEdit?`, `onCancel`, `onSave`, `saving?`, `dirty?`, `detailTitle?`, `detailLoading?`, `detailMessage?` (ValidationSummary / ErrorState), `detailLayout?` (`auto` | `panel` | `drawer`), `secondaryActions?`, `onClose?` (quiet header Close, behind the guard), `children` (the form; the page makes fields read-only in `view`).
+- **Key props:** `title` (plural), `entityName` (singular, lower case), `pluralName?` (plural inside sentences, default the title in lower case: "DCs"), `items`, `getItemId`, `renderItem → { primary, secondary?, meta? }`, `getSearchText` (every search word must occur), `search?`/`onSearchChange?`, `listLoading?`, `listError?`, `onRetryList?`, `selectedId`, `onSelect`, `mode`, `onNew?`, `onEdit?`, `onCancel`, `onSave`, `saving?`, `dirty?`, `detailTitle?`, `detailLoading?`, `detailMessage?` (ValidationSummary / ErrorState), `detailLayout?` (`auto` | `panel` | `drawer`), `secondaryActions?`, `onClose?` (quiet header Close, behind the guard), `children` (the form; the page makes fields read-only in `view`).
 - **Notes:** the template never validates or saves; the page does, and reports through `detailMessage` and the fields. Enter never saves (scanners send Enter); Ctrl+S does. Enter in the search box opens the record whose id equals the typed text (case-insensitive), or the only match (the keyboard path that replaces the legacy "type the code + Enter"). Migration steps: `docs/19` section 14.
 - **Tests:** `templates/templates.test.tsx` (search, empty search, open, view/edit, guard, shortcuts, `/`, load failure, skeleton, drawer).
 
@@ -322,6 +322,12 @@ The design rules behind these are in the legacy workspace `docs/19-ux-design-pri
 ### StatGroup, formatNumber (status: available)
 
 - **Purpose:** `StatGroup` shows key figures as a `<dl>` (`small` inline for table footers, `large` stacked for action bars); the text reads "Label: value". `formatNumber(value, decimals, { fixed? })` is the shared number formatter (en-GB separators, at most `decimals`, no trailing zeros unless `fixed`); rounding stays with the page.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### PropertyList (status: available)
+
+- **Purpose:** Read-only properties of a record as an aligned description list (`dl`: label left, value right, a divider per row) in responsive columns (default `{ xs: 1, sm: 2, lg: 3 }`). For many reference values (a DC's label settings); a few key figures go in `StatGroup`.
+- **Key props:** `items: { label, value }[]`, `label?` (accessible name), `columns?`.
 - **Tests:** `components/uxFoundation.test.tsx`.
 
 ### useKeyboardShortcuts, ShortcutsLegend (status: available)

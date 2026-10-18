@@ -11,6 +11,7 @@ import { FieldGrid, FieldGridItem } from './FieldGrid';
 import { formatNumber } from './format';
 import { FormSection } from './FormSection';
 import { InlineHint } from './InlineHint';
+import { PropertyList } from './PropertyList';
 import { SegmentedControl } from './SegmentedControl';
 import { ShortcutsLegend } from './ShortcutsLegend';
 import { FormSkeleton, ListSkeleton, TableSkeleton } from './SkeletonPresets';
@@ -206,6 +207,33 @@ describe('CheckboxField', () => {
     expect(box).toHaveAccessibleDescription('Cargo for this port may be diverted.');
     await user.click(screen.getByText('Divertable'));
     expect(box).toBeChecked();
+  });
+});
+
+describe('PropertyList', () => {
+  it('pairs each label with its value as a named description list', () => {
+    render(
+      <CimsThemeProvider>
+        <PropertyList
+          label="Settings"
+          items={[
+            { label: 'Loading order', value: '10' },
+            { label: 'Stock update', value: 'Yes' },
+          ]}
+        />
+      </CimsThemeProvider>,
+    );
+    const list = screen.getByLabelText('Settings');
+    expect(
+      within(list)
+        .getAllByRole('term')
+        .map((t) => t.textContent),
+    ).toEqual(['Loading order', 'Stock update']);
+    expect(
+      within(list)
+        .getAllByRole('definition')
+        .map((d) => d.textContent),
+    ).toEqual(['10', 'Yes']);
   });
 });
 
