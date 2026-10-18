@@ -12,6 +12,9 @@ export interface NumericFieldProps {
   onCommit: (value: number) => void;
   readOnly?: boolean;
   id?: string;
+  error?: boolean;
+  helperText?: string;
+  required?: boolean;
 }
 
 const show = (value: number | null) => (value === null ? '' : String(value));
@@ -28,6 +31,9 @@ export function NumericField({
   onCommit,
   readOnly,
   id,
+  error,
+  helperText,
+  required,
 }: NumericFieldProps) {
   const [text, setText] = useState(show(value));
   const [syncedValue, setSyncedValue] = useState(value);
@@ -59,6 +65,9 @@ export function NumericField({
       readOnly={readOnly}
       onChange={readOnly ? undefined : setText}
       onBlur={commit}
+      error={error}
+      helperText={helperText}
+      required={required}
     />
   );
 }

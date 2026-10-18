@@ -12,6 +12,8 @@ export interface CheckboxFieldProps {
   /** One line under the label: what ticking it means. */
   helperText?: ReactNode;
   disabled?: boolean;
+  /** The helper text is a problem (shown in the error colour and announced with the field). */
+  error?: boolean;
   id?: string;
   'data-testid'?: string;
 }
@@ -26,6 +28,7 @@ export function CheckboxField({
   onChange,
   helperText,
   disabled,
+  error,
   id,
   'data-testid': testId,
 }: CheckboxFieldProps) {
@@ -41,14 +44,17 @@ export function CheckboxField({
             checked={checked}
             onChange={(_, value) => onChange(value)}
             slotProps={{
-              input: { 'aria-describedby': helperText ? helpId : undefined } as object,
+              input: {
+                'aria-describedby': helperText ? helpId : undefined,
+                'aria-invalid': error || undefined,
+              } as object,
             }}
           />
         }
         sx={(theme) => ({ minHeight: theme.cims.density.touchTarget - 4, mr: 0 })}
       />
       {helperText ? (
-        <FormHelperText id={helpId} sx={{ mt: -0.5, ml: 4 }}>
+        <FormHelperText id={helpId} error={error} sx={{ mt: -0.5, ml: 4 }}>
           {helperText}
         </FormHelperText>
       ) : null}

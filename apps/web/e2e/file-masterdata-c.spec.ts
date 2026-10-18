@@ -13,6 +13,7 @@ import { expect, test, type Page } from '@playwright/test';
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const apiURL = process.env.E2E_API_URL ?? 'http://localhost:5213';
 const token = process.env.E2E_DEV_TOKEN ?? '';
+const user = process.env.E2E_DEV_USER ?? '';
 const allowSave = process.env.E2E_ALLOW_SAVE === '1';
 const row = process.env.E2E_ROW ?? 'ZZT1';
 const chain = process.env.E2E_CHAIN ?? 'Z';
@@ -30,17 +31,20 @@ async function isReachable(url: string): Promise<boolean> {
 }
 
 const ready =
-  token !== '' && (await isReachable(baseURL)) && (await isReachable(`${apiURL}/health/live`));
+  (token !== '' || user !== '') &&
+  (await isReachable(baseURL)) &&
+  (await isReachable(`${apiURL}/health/live`));
 
 async function signIn(page: Page) {
   await page.goto('/login');
-  await page.getByLabel('Dev bearer token').fill(token);
-  await page.getByRole('button', { name: 'Use dev token' }).click();
-}
-
-async function chooseOption(page: Page, option: string) {
-  await page.getByRole('combobox', { name: 'Option' }).click();
-  await page.getByRole('option', { name: option }).click();
+  if (token) {
+    await page.getByLabel('Dev bearer token').fill(token);
+    await page.getByRole('button', { name: 'Use dev token' }).click();
+  } else {
+    await page.getByLabel('User name').fill(user);
+    await page.getByRole('button', { name: 'Get dev token' }).click();
+  }
+  await expect(page.getByRole('button', { name: 'Use dev token' })).toBeHidden();
 }
 
 /** Types into a numeric field and leaves it, which commits the value. */
@@ -67,60 +71,64 @@ function interceptSaves(page: Page, urlPart: string) {
 }
 
 test.describe('File master pages, wave 1c', () => {
-  test.skip(!ready, `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN.`);
+  test.skip(
+    !ready,
+    `Needs the SPA at ${baseURL}, the API at ${apiURL} and E2E_DEV_TOKEN or E2E_DEV_USER.`,
+  );
 
   test('PM Master: list, validation messages, new and change', async ({ page }) => {
     const posted = interceptSaves(page, '/master-data/pm-masters');
     await signIn(page);
     await page.goto('/File/PMMaster');
-    await expect(
-      page.getByRole('heading', { name: 'Packing Material Master Details' }),
-    ).toBeVisible();
-    // the first PMCategories row is preselected
-    await expect(page.getByRole('combobox', { name: 'PM Category' })).not.toBeEmpty();
+    await expect(page.getByRole('heading', { level: 1, name: 'Packing materials' })).toBeVisible();
+    const list = page.getByRole('list', { name: 'Packing materials' });
+    await expect(list.getByRole('button').first()).toBeVisible({ timeout: 20_000 });
 
     if (runNew) {
+      await page.getByRole('button', { name: 'New packing material' }).first().click();
+      // the first PMCategories row is preselected
+      await expect(page.getByRole('combobox', { name: 'PM category' })).not.toBeEmpty();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Enter Description')).toBeVisible();
-      await page.locator('#PMDescription').fill(`${row} PM`);
+      await expect(page.getByTestId('save-problems')).toContainText('Enter the description');
+      await page.getByRole('textbox', { name: 'Description' }).fill(`${row} PM`);
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Enter PM Code')).toBeVisible();
+      await expect(page.getByTestId('save-problems')).toContainText(
+        'Enter the packing material code',
+      );
 
-      await page.locator('#PMCode').fill(row);
-      await page.getByRole('combobox', { name: 'PM Category' }).click();
+      await page.getByRole('textbox', { name: 'Packing material code' }).fill(row);
+      await page.getByRole('combobox', { name: 'PM category' }).click();
       await page.getByRole('option', { name: 'Hanger' }).click();
-      await setNumber(page, 'Reorder Level', '100');
+      await setNumber(page, 'Reorder level', '100');
       await setNumber(page, 'Weight (g)', '12');
       await setNumber(page, 'CBM', '3');
-      await page.getByRole('checkbox', { name: 'Get Parts Count' }).check();
+      await page.getByRole('checkbox', { name: 'Get parts count' }).check();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+      await expect(page.getByTestId('save-result')).toContainText(
+        `Packing material ${row} created.`,
+      );
+      await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
     }
 
     if (runChange) {
-      await chooseOption(page, 'Change');
-      await page.locator('#btnPMCode').click();
-      const dialog = page.getByRole('dialog', { name: 'Packing Material Master Listing' });
-      await expect(dialog).toBeVisible();
-      await dialog.getByRole('textbox', { name: 'Search PMCode', exact: true }).fill(row);
-      await dialog.getByRole('button', { name: 'Select' }).first().click();
-      await expect(dialog).toBeHidden();
-
-      await expect(page.locator('#PMDescription')).toHaveValue(`${row} PM`);
-      await expect(page.getByRole('textbox', { name: 'Reorder Level' })).toHaveValue('100');
-      await expect(page.getByRole('checkbox', { name: 'Get Parts Count' })).toBeChecked();
-      await page.locator('#PMDescription').fill(`${row} PM CHANGED`);
-      await page.getByRole('combobox', { name: 'PM Category' }).click();
+      const search = page.getByRole('searchbox', { name: 'Search packing materials' });
+      await search.fill(row);
+      await search.press('Enter');
+      await expect(page.getByRole('textbox', { name: 'Description' })).toHaveValue(`${row} PM`);
+      await expect(page.getByRole('textbox', { name: 'Reorder level' })).toHaveValue('100');
+      await expect(page.getByRole('textbox', { name: 'Get parts count' })).toHaveValue('Yes');
+      await page.getByRole('button', { name: 'Edit' }).click();
+      await page.getByRole('textbox', { name: 'Description' }).fill(`${row} PM CHANGED`);
+      await page.getByRole('combobox', { name: 'PM category' }).click();
       await page.getByRole('option', { name: 'Carton' }).click();
-      await setNumber(page, 'Reorder Level', '200');
+      await setNumber(page, 'Reorder level', '200');
       await setNumber(page, 'Weight (g)', '15');
       await setNumber(page, 'CBM', '4');
-      await page.getByRole('checkbox', { name: 'Get Parts Count' }).uncheck();
-      await page.getByRole('checkbox', { name: 'Get Jokers Count' }).check();
-      await page.getByRole('checkbox', { name: 'Is Acive' }).uncheck();
+      await page.getByRole('checkbox', { name: 'Get parts count' }).uncheck();
+      await page.getByRole('checkbox', { name: 'Get jokers count' }).check();
+      await page.getByRole('checkbox', { name: 'Active' }).uncheck();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully').last()).toBeVisible();
+      await expect(page.getByTestId('save-result')).toContainText(`Packing material ${row} saved.`);
     } else if (!allowSave) {
       expect(posted[0]).toMatchObject({
         pmCode: row,

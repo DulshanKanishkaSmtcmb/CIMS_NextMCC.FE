@@ -66,6 +66,11 @@ export interface KeyedSaveOptions {
   messages: KeyedSaveMessages;
   /** New and the key exists (check or server 409): show it on the key field. */
   refuseExisting: () => void;
+  /**
+   * A check the legacy page ran after the existence check and before sending (PM Master's both-counts rule): return
+   * false to stop; it shows its own message.
+   */
+  beforeSend?: () => boolean;
   /** The save's answer (e.g. the generated code). */
   onSaved: (data: unknown) => void;
   /** Run again after "Try again". */
@@ -233,6 +238,7 @@ export function useMasterRecord<F extends object>(empty: F, onReset?: () => void
         setNotice(missing());
         return;
       }
+      if (o.beforeSend && !o.beforeSend()) return;
       const result = await o.send();
       if (result.data) {
         o.onSaved(result.data);

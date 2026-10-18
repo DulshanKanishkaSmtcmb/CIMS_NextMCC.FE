@@ -315,7 +315,7 @@ The design rules behind these are in the legacy workspace `docs/19-ux-design-pri
 
 - **Purpose:** A yes/no field of a form: checkbox and label as one click target (touch-target height), optional helper line under it (described-by). In a read-only view show the value as text instead of a disabled box.
 - **Wraps:** `FormControlLabel`, `Checkbox`, `FormHelperText`.
-- **Key props:** `label`, `checked`, `onChange(checked)`, `helperText?`, `disabled?`, `id?`.
+- **Key props:** `label`, `checked`, `onChange(checked)`, `helperText?`, `error?` (the helper text is a problem: error colour, `aria-invalid`), `disabled?`, `id?`.
 - **Usage:** Ports "Divertable", PM Master flags.
 - **Tests:** `components/uxFoundation.test.tsx`.
 
