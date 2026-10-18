@@ -91,6 +91,16 @@ describe('LookupField', () => {
     expect(document.getElementById('btnCode')).toBeDisabled();
   });
 
+  it('names the input by ariaLabel when it has no visible label', () => {
+    render(
+      <CimsThemeProvider>
+        <LookupField ariaLabel="Material Code" value="C0001" onSearch={() => undefined} />
+      </CimsThemeProvider>,
+    );
+    expect(screen.getByRole('textbox', { name: 'Material Code' })).toHaveValue('C0001');
+    expect(screen.getByRole('button', { name: 'Search' })).toBeEnabled();
+  });
+
   it('hides the search button on request', () => {
     render(<Field hideSearch />);
     expect(document.getElementById('btnCode')).toBeNull();

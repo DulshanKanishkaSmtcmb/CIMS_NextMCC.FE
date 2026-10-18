@@ -137,3 +137,38 @@ describe('TextInput', () => {
     expect(screen.getByTestId('echo')).toHaveTextContent('MSCU1');
   });
 });
+
+describe('table-cell fields without a visible label', () => {
+  it('TextInput shows a text area of at least the requested rows', () => {
+    render(
+      <CimsThemeProvider>
+        <TextInput ariaLabel="Detail" rows={3} value="line 1" onChange={() => undefined} />
+      </CimsThemeProvider>,
+    );
+
+    const area = screen.getByRole('textbox', { name: 'Detail' });
+    expect(area.tagName).toBe('TEXTAREA');
+    expect(area).toHaveValue('line 1');
+  });
+
+  it('SelectField takes its accessible name from ariaLabel', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <CimsThemeProvider>
+        <SelectField
+          ariaLabel="Unit Type"
+          value="PCS"
+          options={['Storage', 'PCS']}
+          onChange={onChange}
+        />
+      </CimsThemeProvider>,
+    );
+
+    const select = screen.getByRole('combobox', { name: 'Unit Type' });
+    expect(select).toHaveTextContent('PCS');
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: 'Storage' }));
+    expect(onChange).toHaveBeenCalledWith('Storage');
+  });
+});
