@@ -7,6 +7,7 @@ import { userManager } from '../../auth/userManager';
 import { useAppDispatch } from '../../redux/hooks';
 import { signedIn } from '../../redux/slices/authSlice';
 import { PATHS } from '../../routes/paths';
+import { loadPage } from '../../utils/loadPage';
 import { safeReturnTo } from '../../utils/returnTo';
 
 /** Completes the OIDC redirect, stores the profile, asks the API for the legacy cookie, then moves on. */
@@ -34,8 +35,10 @@ export function AuthCallbackPage() {
         console.warn('Legacy session could not be created', cause);
       }
 
-      const returnTo = (user.state as { returnTo?: unknown } | undefined)?.returnTo;
-      navigate(safeReturnTo(returnTo), { replace: true });
+      const state = user.state as { returnTo?: unknown; fullPageLoad?: unknown } | undefined;
+      // A destination from a legacy page (ReturnUrl) is loaded in full so the gateway decides which app serves it.
+      if (state?.fullPageLoad === true) loadPage(safeReturnTo(state.returnTo));
+      else navigate(safeReturnTo(state?.returnTo), { replace: true });
     })().catch((cause: unknown) => setError(getErrorMessage(cause, 'Sign-in failed')));
   }, [dispatch, navigate]);
 

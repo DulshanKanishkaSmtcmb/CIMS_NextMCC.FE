@@ -34,6 +34,7 @@ export function AppRoutes() {
     <Suspense fallback={<PageLoading fullScreen />}>
       <Routes>
         <Route path={PATHS.login} element={<LoginPage />} />
+        <Route path={PATHS.legacyLogin} element={<LoginPage />} />
         <Route path={PATHS.authCallback} element={<AuthCallbackPage />} />
         <Route
           element={

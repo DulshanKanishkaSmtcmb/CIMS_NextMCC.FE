@@ -1,28 +1,35 @@
 import { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { Alert, Box, Button, Paper, Stack, Typography } from '@cims/ui';
 import { getErrorMessage } from '@cims/api-client';
 import { devTokenEnabled } from '../../auth/devToken';
 import { userManager } from '../../auth/userManager';
 import { env } from '../../config/env';
 import { useAppSelector } from '../../redux/hooks';
-import { safeReturnTo } from '../../utils/returnTo';
+import { legacyReturnUrl, safeReturnTo } from '../../utils/returnTo';
+import { ContinueAfterSignIn } from './ContinueAfterSignIn';
 import { DevTokenForm } from './DevTokenForm';
 
-/** Starts the Identity redirect (authorization code + PKCE). The user types their password at Identity, never here. */
+/**
+ * Starts the Identity redirect (authorization code + PKCE). The user types their password at Identity, never here.
+ * Served at /login and at the legacy /Account/Login (flipped at the gateway), where legacy pages send users with
+ * ?ReturnUrl=<legacy path>.
+ */
 export function LoginPage() {
   const status = useAppSelector((state) => state.auth.status);
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
-  const returnTo = safeReturnTo((location.state as { from?: unknown } | null)?.from);
+  const fromLegacy = legacyReturnUrl(location.search);
+  const returnTo = safeReturnTo(fromLegacy ?? (location.state as { from?: unknown } | null)?.from);
 
   if (status === 'authenticated') {
-    return <Navigate to={returnTo} replace />;
+    return <ContinueAfterSignIn returnTo={returnTo} fullPageLoad={fromLegacy !== null} />;
   }
 
   const signIn = () => {
     setError(null);
-    userManager.signinRedirect({ state: { returnTo } }).catch((cause: unknown) => {
+    const state = fromLegacy !== null ? { returnTo, fullPageLoad: true } : { returnTo };
+    userManager.signinRedirect({ state }).catch((cause: unknown) => {
       setError(getErrorMessage(cause, 'Could not reach the sign-in service'));
     });
   };

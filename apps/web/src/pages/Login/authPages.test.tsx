@@ -4,10 +4,11 @@ import { Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../test/renderWithProviders';
 
-const { signinRedirect, signinCallback, create } = vi.hoisted(() => ({
+const { signinRedirect, signinCallback, create, loadPage } = vi.hoisted(() => ({
   signinRedirect: vi.fn(),
   signinCallback: vi.fn(),
   create: vi.fn(),
+  loadPage: vi.fn(),
 }));
 
 vi.mock('../../auth/userManager', () => ({
@@ -19,13 +20,89 @@ vi.mock('@cims/api-client', async (importOriginal) => ({
   legacySession: { create },
 }));
 
+vi.mock('../../utils/loadPage', () => ({ loadPage }));
+
 import { AuthCallbackPage } from '../AuthCallback/AuthCallbackPage';
 import { LoginPage } from './LoginPage';
+import { signedInState } from '../../test/renderWithProviders';
 
 beforeEach(() => {
   signinRedirect.mockReset().mockResolvedValue(undefined);
   signinCallback.mockReset();
   create.mockReset();
+  loadPage.mockReset();
+  window.sessionStorage.clear();
+});
+
+describe('LoginPage at the legacy /Account/Login (flipped at the gateway)', () => {
+  function renderSignedIn(route: string) {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/Account/Login" element={<LoginPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/Data/ConfirmArrival" element={<div>arrival page</div>} />
+        <Route path="/Home/Index" element={<div>home page</div>} />
+      </Routes>,
+      { route, preloadedState: signedInState },
+    );
+  }
+
+  it('issues the legacy cookie, then loads the ReturnUrl in full so the gateway routes it', async () => {
+    create.mockResolvedValue({ available: true, status: 200 });
+
+    renderSignedIn('/Account/Login?ReturnUrl=%2FData%2FContainersAllocation%3Fx%3D1');
+
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/Data/ContainersAllocation?x=1'));
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('never leaves the site through ReturnUrl', async () => {
+    create.mockResolvedValue({ available: true, status: 200 });
+
+    renderSignedIn('/Account/Login?ReturnUrl=https%3A%2F%2Fevil.example%2F');
+
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/Home/Index'));
+  });
+
+  it('stops with a message when the legacy app sends the user straight back', async () => {
+    create.mockResolvedValue({ available: true, status: 200 });
+    window.sessionStorage.setItem(
+      'cims.legacyReturn',
+      JSON.stringify({ path: '/Home/Index', at: Date.now() - 1000 }),
+    );
+
+    renderSignedIn('/Account/Login?ReturnUrl=%2FHome%2FIndex');
+
+    expect(await screen.findByText(/did not accept your session/)).toBeInTheDocument();
+    expect(loadPage).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('on /login without ReturnUrl, issues the legacy cookie and stays in the app router', async () => {
+    create.mockRejectedValue(new Error('network'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    renderSignedIn('/login');
+
+    expect(await screen.findByText('home page')).toBeInTheDocument();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(loadPage).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('marks the OIDC state for a full page load when the user came from a legacy page', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<LoginPage />, {
+      route: '/Account/Login?ReturnUrl=%2FHome%2FIndex',
+      preloadedState: { auth: { status: 'unauthenticated', profile: null, allowedTenants: [] } },
+    });
+
+    await user.click(screen.getByRole('button', { name: /sign in with cims identity/i }));
+
+    expect(signinRedirect).toHaveBeenCalledWith({
+      state: { returnTo: '/Home/Index', fullPageLoad: true },
+    });
+  });
 });
 
 describe('LoginPage', () => {

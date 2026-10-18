@@ -46,12 +46,13 @@ npm run dev                                    # http://localhost:5173
 
 Set in `apps/web/.env.local` for development, or as Docker build arguments for the image. Vite inlines them at build time and only `VITE_*` values reach the browser, so nothing secret belongs here. The SPA is a public OIDC client (authorization code + PKCE); there is no client secret and no password grant.
 
-| Variable                  | Meaning                                                                          | Default            |
-| ------------------------- | -------------------------------------------------------------------------------- | ------------------ |
-| `VITE_API_BASE_URL`       | API base URL. Empty means the same origin (behind the gateway or the dev proxy). | empty              |
-| `VITE_IDENTITY_AUTHORITY` | CIMS Identity Server issuer URL.                                                 | none, required     |
-| `VITE_CLIENT_ID`          | OIDC client id registered in Identity.                                           | `cims-nextmcc-spa` |
-| `DEV_API_PROXY_TARGET`    | Dev server only. Forwards `/api` to a local API so the browser sees one origin.  | unset              |
+| Variable                  | Meaning                                                                                                                                                                                                            | Default            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `VITE_API_BASE_URL`       | API base URL. Empty means the same origin (behind the gateway or the dev proxy).                                                                                                                                   | empty              |
+| `VITE_IDENTITY_AUTHORITY` | CIMS Identity Server issuer URL.                                                                                                                                                                                   | none, required     |
+| `VITE_CLIENT_ID`          | OIDC client id registered in Identity.                                                                                                                                                                             | `cims-nextmcc-spa` |
+| `DEV_API_PROXY_TARGET`    | Dev server only. Forwards `/api` to a local API so the browser sees one origin.                                                                                                                                    | unset              |
+| `VITE_ENABLE_DEV_TOKEN`   | `true` compiles the dev-token sign-in into a production build. Only the API repo's local gateway (`deploy/dev-gateway`, mode `devgateway`) sets it; never set it for a deployed build. Always on under `vite dev`. | unset              |
 
 Identity needs a public client with: redirect URI `<origin>/auth/callback` (also used for silent renew), post-logout redirect `<origin>/login`, scope `openid profile cims.nextmcc`. The dev origin is `http://localhost:5173`. The scope and client id follow the task for this repository; section 4.2 of the plan still names `cims-inventory-spa` and `cims.inventory`, so confirm the final names with the Identity and API teams.
 
@@ -83,7 +84,7 @@ If a page needs something MUI offers that `@cims/ui` does not export yet, add a 
 
 ## Authentication in short
 
-1. `/login` starts the Identity redirect (`oidc-client-ts`, code + PKCE).
+1. `/login` starts the Identity redirect (`oidc-client-ts`, code + PKCE). The legacy `/Account/Login` is the same page (the gateway flips it to the SPA for everyone): legacy pages send unauthenticated users there with `?ReturnUrl=<legacy path>`. After sign-in the page calls `POST /api/v1/legacy-session` and loads `ReturnUrl` in full, so the gateway, not the router, picks the app that serves it; a signed-in user who lands there again (legacy cookie missing) gets a new cookie the same way, with a loop guard.
 2. `/auth/callback` finishes it, stores the profile and allowed tenants in Redux, then calls `POST /api/v1/legacy-session` so legacy pages on the same hostname accept the user. A 501 is ignored.
 3. Tokens stay inside `oidc-client-ts` (session storage). They are never copied into Redux. `@cims/api-client` asks for the token on every request.
 4. A 401 from the API signs the user out locally and sends them back to `/login`.

@@ -4,11 +4,14 @@ import { parseTenants, type SessionInfo } from './profile';
  * DEVELOPMENT ONLY: sign in with a bearer token minted locally by `dotnet user-jwts` (the API's DevJwt scheme), for
  * machines that cannot reach CIMS Identity. The token comes from VITE_DEV_BEARER_TOKEN (.env.local) or is pasted on
  * the sign-in page and kept in sessionStorage for the tab. Every function is inert outside `vite dev`
- * (import.meta.env.DEV is false in production builds, so the code is dropped from the bundle).
+ * (import.meta.env.DEV is false in production builds, so the code is dropped from the bundle), unless the build sets
+ * VITE_ENABLE_DEV_TOKEN=true: the API repo's local gateway (deploy/dev-gateway) builds the SPA that way because CIMS
+ * Identity is not reachable there either. A deployed build never sets it.
  */
 const STORAGE_KEY = 'cims.devBearerToken';
 
-export const devTokenEnabled = import.meta.env.DEV;
+export const devTokenEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOKEN === 'true';
 
 export function getDevToken(): string | null {
   if (!devTokenEnabled) return null;
