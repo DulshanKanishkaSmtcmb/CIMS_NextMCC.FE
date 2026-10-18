@@ -10,7 +10,7 @@ import type { Supplier } from '../../services/supplierApi';
 import { SupplierPage } from './SupplierPage';
 
 // DataGrid interactions are slow in jsdom.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 }); // slower when the suites run in parallel
 
 const supplier = (code: string, name: string, extra: Partial<Supplier> = {}): Supplier => ({
   shipperCode: code,

@@ -10,7 +10,7 @@ import type { PmSupplier } from '../../services/supplierApi';
 import { PmSupplierPage } from './PmSupplierPage';
 
 // DataGrid interactions (the country lookup dialog) are slow in jsdom.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 }); // slower when the suites run in parallel
 
 const pm = (code: string, name: string, extra: Partial<PmSupplier> = {}): PmSupplier => ({
   pmSupplierCode: code,

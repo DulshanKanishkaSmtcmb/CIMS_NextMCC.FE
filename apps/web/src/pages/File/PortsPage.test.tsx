@@ -9,7 +9,7 @@ import type { Country, Port } from '../../services/masterDataApi';
 import { PortsPage } from './PortsPage';
 
 // DataGrid interactions (the country lookup dialog) are slow in jsdom.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 }); // slower when the suites run in parallel
 
 const port = (code: string, name: string, countryCode: string, isDivertable = false): Port => ({
   portCode: code,

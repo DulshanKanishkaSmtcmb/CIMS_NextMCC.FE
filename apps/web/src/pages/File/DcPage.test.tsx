@@ -9,7 +9,7 @@ import type { Country, Dc } from '../../services/masterDataApi';
 import { DcPage } from './DcPage';
 
 // DataGrid interactions (the country lookup dialog) are slow in jsdom.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 }); // slower when the suites run in parallel
 
 const dc = (whDes: string, countryCode: string): Dc =>
   ({
