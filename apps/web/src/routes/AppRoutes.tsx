@@ -49,6 +49,9 @@ const RateCardEntryPage = lazy(() =>
 const OkToLoadReasonPage = lazy(() =>
   import('../pages/File/OkToLoadReasonPage').then((m) => ({ default: m.OkToLoadReasonPage })),
 );
+const PalletRackBuildPage = lazy(() =>
+  import('../pages/File/PalletRackBuildPage').then((m) => ({ default: m.PalletRackBuildPage })),
+);
 const NotFoundPage = lazy(() =>
   import('../pages/NotFound/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
@@ -81,6 +84,8 @@ export function AppRoutes() {
           <Route path={PATHS.pmSupplier} element={<PmSupplierPage />} />
           <Route path={PATHS.rateCardEntry} element={<RateCardEntryPage />} />
           <Route path={PATHS.okToLoadReason} element={<OkToLoadReasonPage />} />
+          <Route path={PATHS.palletRackBuild} element={<PalletRackBuildPage />} />
+          <Route path={PATHS.palletRackBuildArr} element={<PalletRackBuildPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

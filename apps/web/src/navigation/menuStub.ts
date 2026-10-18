@@ -119,6 +119,13 @@ export const MENU_STUB: readonly LegacyMenuRow[] = [
     menuController: 'File',
     menuAction: 'RateCardEntry',
   }),
+  row({
+    menuId: '100.14',
+    menuName: 'Pallet Rack Build',
+    menuParentId: '100',
+    menuController: 'Data',
+    menuAction: 'PalletRackBuildArr',
+  }),
   // Loading Approvals is a top-level group in CloudMenu (200.25, parent 0); the real id and name are kept.
   row({
     menuId: '200.25',

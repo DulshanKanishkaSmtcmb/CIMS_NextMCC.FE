@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BlockingOverlay,
@@ -78,6 +78,33 @@ const emptyCfsRow = (): CfsRow => ({
 
 const numberCell = { textAlign: 'right' } as const;
 
+/** One row of the freight table. Memoised: the table has a row per port and container type (170 or more). */
+const FreightRateRow = memo(function FreightRateRow({
+  row,
+  index,
+  onRate,
+}: {
+  row: FreightRow;
+  index: number;
+  onRate: (index: number, rate: number) => void;
+}) {
+  return (
+    <TableRow>
+      <TableCell>{row.portCode}</TableCell>
+      <TableCell>{row.portName}</TableCell>
+      <TableCell>{row.cntrType}</TableCell>
+      <TableCell>
+        <NumericField
+          ariaLabel="Rate[USD]"
+          value={row.rate}
+          decimals={2}
+          onCommit={(rate) => onRate(index, rate)}
+        />
+      </TableCell>
+    </TableRow>
+  );
+});
+
 /**
  * Rate Card Entry (legacy /File/RateCardEntry, CloudMenu 100.12): the export clearance, freight and CFS rate tables.
  * Same sections, column order, labels and footer (Load Rates, New, Close) as Views/File/RateCardEntry.cshtml +
@@ -154,6 +181,13 @@ export function RateCardEntryPage() {
     }
   };
 
+  // Stable, so the 170-odd freight rows below only render again when their own row changes.
+  const setFreightRate = useCallback(
+    (index: number, rate: number) =>
+      setFreight((rows) => rows.map((r, j) => (j === index ? { ...r, rate } : r))),
+    [],
+  );
+
   const patchCfs = (index: number, patch: Partial<CfsRow>) =>
     setCfs((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
 
@@ -205,9 +239,7 @@ export function RateCardEntryPage() {
                     <TableBody>
                       {clearance.map((row, i) => (
                         <TableRow key={`${row.cntrType}-${i}`}>
-                          <TableCell>
-                            <TextInput value={row.cntrType} ariaLabel="Cntr Type" readOnly />
-                          </TableCell>
+                          <TableCell>{row.cntrType}</TableCell>
                           <TableCell>
                             <NumericField
                               ariaLabel="Rate[USD]"
@@ -243,29 +275,12 @@ export function RateCardEntryPage() {
                     </TableHead>
                     <TableBody>
                       {freight.map((row, i) => (
-                        <TableRow key={`${row.portCode}-${row.cntrType}-${i}`}>
-                          <TableCell>
-                            <TextInput value={row.portCode} ariaLabel="Port Code" readOnly />
-                          </TableCell>
-                          <TableCell>
-                            <TextInput value={row.portName} ariaLabel="Port Name" readOnly />
-                          </TableCell>
-                          <TableCell>
-                            <TextInput value={row.cntrType} ariaLabel="Cntr Type" readOnly />
-                          </TableCell>
-                          <TableCell>
-                            <NumericField
-                              ariaLabel="Rate[USD]"
-                              value={row.rate}
-                              decimals={2}
-                              onCommit={(rate) =>
-                                setFreight((rows) =>
-                                  rows.map((r, j) => (j === i ? { ...r, rate } : r)),
-                                )
-                              }
-                            />
-                          </TableCell>
-                        </TableRow>
+                        <FreightRateRow
+                          key={`${row.portCode}-${row.cntrType}-${i}`}
+                          index={i}
+                          row={row}
+                          onRate={setFreightRate}
+                        />
                       ))}
                     </TableBody>
                   </Table>

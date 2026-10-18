@@ -146,18 +146,18 @@ describe('RateCardEntryPage', () => {
     );
   });
 
-  it('shows the stored values, the container types read-only and a missing rate as 0', async () => {
+  it('shows the stored values, the container types and ports as plain cells and a missing rate as 0', async () => {
     setup();
     await screen.findByRole('table', { name: 'Export Clearance Charges' });
 
     const [first, second] = rowsOf(clearanceTable());
-    expect(within(first).getByRole('textbox', { name: 'Cntr Type' })).toHaveValue('20GP');
-    expect(within(first).getByRole('textbox', { name: 'Cntr Type' })).toHaveAttribute('readonly');
+    expect(within(first).getByRole('cell', { name: '20GP' })).toBeInTheDocument();
     expect(within(first).getByRole('textbox', { name: 'Rate[USD]' })).toHaveValue('700');
     expect(within(second).getByRole('textbox', { name: 'Rate[USD]' })).toHaveValue('0');
     const freight = rowsOf(freightTable())[1];
-    expect(within(freight).getByRole('textbox', { name: 'Port Code' })).toHaveValue('WSP');
-    expect(within(freight).getByRole('textbox', { name: 'Port Name' })).toHaveValue('Westport');
+    expect(within(freight).getByRole('cell', { name: 'WSP' })).toBeInTheDocument();
+    expect(within(freight).getByRole('cell', { name: 'Westport' })).toBeInTheDocument();
+    expect(within(freight).getByRole('textbox', { name: 'Rate[USD]' })).toHaveValue('250');
   });
 
   it('rounds an edited rate to two decimals and ignores text that is not a number', async () => {

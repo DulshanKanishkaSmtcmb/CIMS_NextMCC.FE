@@ -61,6 +61,7 @@ describe('buildNavigation', () => {
       { title: 'Packing Material', segment: 'File/PMMaster' },
       { title: 'Product Category', segment: 'File/ProductCategory' },
       { title: 'Rate Card', segment: 'File/RateCardEntry' },
+      { title: 'Pallet Rack Build', segment: 'Data/PalletRackBuildArr' },
     ]);
     expect(approvals?.children).toMatchObject([
       { title: 'Ok to Ship/Hold Reasons', segment: 'File/OkToLoadReason' },
