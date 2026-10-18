@@ -44,17 +44,23 @@ export function LoginPage() {
           <Typography variant="body2" color="text.secondary">
             Sign in with your CIMS account to continue.
           </Typography>
-          {!env.identityAuthority ? (
+          {!env.identityAuthority && devTokenEnabled ? (
+            <Alert severity="info">
+              This copy runs without the CIMS Identity Server. Sign in with a dev token below
+              (deploy/dev-gateway/new-dev-token.ps1 in the API repo puts one on the clipboard).
+            </Alert>
+          ) : null}
+          {!env.identityAuthority && !devTokenEnabled ? (
             <Alert severity="warning">
               VITE_IDENTITY_AUTHORITY is not set. Copy apps/web/.env.example to .env.local and set
               it.
             </Alert>
           ) : null}
           {error ? <Alert severity="error">{error}</Alert> : null}
+          {devTokenEnabled ? <DevTokenForm /> : null}
           <Button variant="contained" size="large" onClick={signIn}>
             Sign in with CIMS Identity
           </Button>
-          {devTokenEnabled ? <DevTokenForm /> : null}
         </Stack>
       </Paper>
     </Box>
