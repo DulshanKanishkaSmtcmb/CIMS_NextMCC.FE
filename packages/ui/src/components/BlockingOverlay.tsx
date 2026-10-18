@@ -33,8 +33,11 @@ export function BlockingOverlay({
         zIndex: theme.zIndex.modal + 1,
         flexDirection: 'column',
         gap: 2,
-        color: theme.palette.text.primary,
-        backgroundColor: alpha(theme.palette.background.paper, 0.6),
+        // CSS variables follow the light/dark colour scheme; plain values are the fallback for themes without them.
+        color: (theme.vars ?? theme).palette.text.primary,
+        backgroundColor: theme.vars
+          ? `rgba(${theme.vars.palette.background.paperChannel} / 0.6)`
+          : alpha(theme.palette.background.paper, 0.6),
       })}
     >
       <CircularProgress color="primary" />

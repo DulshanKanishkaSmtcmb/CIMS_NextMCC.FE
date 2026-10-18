@@ -11,7 +11,7 @@ vi.mock('../auth/userManager', () => ({
 import { AppLayout } from './AppLayout';
 
 describe('AppLayout', () => {
-  it('shows the legacy-shaped menu, the tenant switcher and the routed page', async () => {
+  it('shows the legacy-shaped menu, the theme and tenant switchers and the routed page', async () => {
     renderWithProviders(
       <Routes>
         <Route element={<AppLayout />}>
@@ -27,6 +27,8 @@ describe('AppLayout', () => {
     expect(screen.getAllByText('Data').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Reference').length).toBeGreaterThan(0);
     expect(screen.getByRole('combobox', { name: 'Tenant' })).toHaveTextContent('Next MCC');
+    // Light / dark / system theme switch in the app bar.
+    expect(screen.getAllByRole('button', { name: /^Theme:/ }).length).toBeGreaterThan(0);
   });
 
   it('links menu entries to the legacy URLs', async () => {

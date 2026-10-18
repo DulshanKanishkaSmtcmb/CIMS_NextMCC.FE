@@ -1,12 +1,17 @@
-import { alpha, createTheme } from '@mui/material/styles';
+import { createTheme, type Theme } from '@mui/material/styles';
 import type {} from '@mui/x-data-grid/themeAugmentation';
 
 /**
  * Theme tokens. All colours, spacing, typography and scanner sizing live here and nowhere else.
  * Application code reads them through the MUI theme (sx="primary.main", theme.spacing, theme.cims).
- * Design rationale: legacy workspace docs/19-ux-design-principles.md, section 8.
+ * Design rationale: legacy workspace docs/19-ux-design-principles.md, sections 8 (tokens) and 8.1 (theme modes).
+ *
+ * Two colour schemes, light (default, bright halls) and dark (night shifts, office preference). Colours that differ per
+ * scheme are CSS variables at run time, so `theme.cims.status.*` and `theme.cims.focusRing.color` hold `var(...)`
+ * references, not hex values; read the hex values from `cimsTokens` only for documentation and tests.
  */
 export const cimsTokens = {
+  /** Light scheme. */
   palette: {
     primary: '#0d4a8a',
     secondary: '#546e7a',
@@ -16,14 +21,30 @@ export const cimsTokens = {
     info: '#0277bd',
     background: '#f4f6f8',
     paper: '#ffffff',
-    /** Body text and secondary text: at least 7:1 and 4.5:1 on the background, for bright warehouse halls. */
+    /** Body text 15:1 and secondary text 7:1 on the background, for bright warehouse halls. */
     textPrimary: '#1a2027',
     textSecondary: '#4a5561',
     divider: '#d5dbe1',
   },
+  /** Dark scheme. Text 14–16:1 and secondary text 8:1; primary is a light blue with dark text on filled buttons. */
+  darkPalette: {
+    primary: '#82b4f2',
+    primaryContrastText: '#0a1929',
+    secondary: '#90a4ae',
+    success: '#66bb6a',
+    error: '#f47373',
+    warning: '#ffa726',
+    info: '#4fc3f7',
+    background: '#0f1419',
+    paper: '#171d24',
+    textPrimary: '#e6edf3',
+    textSecondary: '#a9b4c0',
+    divider: '#33404d',
+  },
   /**
-   * Status colours for chips, hints and banners. `fg` on `bg` and `fg` on white both pass WCAG AA (4.5:1) for text;
-   * `main` is the border/icon colour. Status is never shown by colour alone: always with an icon and a word.
+   * Status colours for chips, hints and banners (light scheme). `fg` on `bg` and `fg` on white both pass WCAG AA (4.5:1)
+   * for text; `main` is the border/icon colour (3:1 or more). Status is never shown by colour alone: always with an icon
+   * and a word.
    */
   status: {
     success: { main: '#2e7d32', fg: '#1b5e20', bg: '#e8f5e9' },
@@ -31,6 +52,14 @@ export const cimsTokens = {
     error: { main: '#c62828', fg: '#b71c1c', bg: '#fdecea' },
     info: { main: '#0277bd', fg: '#01579b', bg: '#e3f2fd' },
     neutral: { main: '#78909c', fg: '#37474f', bg: '#eceff1' },
+  },
+  /** Status colours of the dark scheme: `fg` on `bg` 9:1 or more, `main` on paper 6:1 or more. */
+  darkStatus: {
+    success: { main: '#66bb6a', fg: '#a5d6a7', bg: '#14291a' },
+    warning: { main: '#ffa726', fg: '#ffcc80', bg: '#2e2210' },
+    error: { main: '#f47373', fg: '#ffb4ab', bg: '#3b1716' },
+    info: { main: '#4fc3f7', fg: '#a6dcff', bg: '#0d2533' },
+    neutral: { main: '#90a4ae', fg: '#cfd8dc', bg: '#232c33' },
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
@@ -51,6 +80,7 @@ export const cimsTokens = {
     width: 3,
     offset: 2,
     color: '#0b5cad',
+    darkColor: '#9cc3ff',
   },
   /** Page anatomy: paddings and widths used by PageShell and the page templates (spacing units unless noted). */
   layout: {
@@ -81,6 +111,7 @@ export interface CimsThemeTokens {
     inputFontSize: string;
     inputMinHeight: number;
   };
+  /** CSS variable references that follow the active colour scheme. */
   status: Record<CimsStatusTone, CimsStatusColour>;
   focusRing: { width: number; offset: number; color: string };
   layout: {
@@ -100,34 +131,80 @@ declare module '@mui/material/styles' {
   interface ThemeOptions {
     cims?: CimsThemeTokens;
   }
+  interface Palette {
+    status: Record<CimsStatusTone, CimsStatusColour>;
+    focusRing: string;
+  }
+  interface PaletteOptions {
+    status?: Record<CimsStatusTone, CimsStatusColour>;
+    focusRing?: string;
+  }
 }
+
+/** The colour-scheme storage keys. They equal Toolpad's, so the shell (Toolpad AppProvider) and pages outside it agree. */
+export const CIMS_MODE_STORAGE_KEY = 'toolpad-mode';
+export const CIMS_COLOR_SCHEME_STORAGE_KEY = 'toolpad-color-scheme';
+
+/** CSS variable for a palette path, e.g. cssVar('status-success-fg') -> var(--mui-palette-status-success-fg). */
+const paletteVar = (path: string) => `var(--mui-palette-${path})`;
+
+const statusVars = Object.fromEntries(
+  (['success', 'warning', 'error', 'info', 'neutral'] as const).map((tone) => [
+    tone,
+    {
+      main: paletteVar(`status-${tone}-main`),
+      fg: paletteVar(`status-${tone}-fg`),
+      bg: paletteVar(`status-${tone}-bg`),
+    },
+  ]),
+) as Record<CimsStatusTone, CimsStatusColour>;
 
 const ring = cimsTokens.focusRing;
 const focusOutline = {
-  outline: `${ring.width}px solid ${ring.color}`,
+  outline: `${ring.width}px solid ${paletteVar('focusRing')}`,
   outlineOffset: ring.offset,
 } as const;
 
-/** Light theme with dense defaults (small inputs, compact tables) for scanner stations. */
-export const cimsTheme = createTheme({
-  cssVariables: true,
-  palette: {
-    mode: 'light',
-    primary: { main: cimsTokens.palette.primary },
-    secondary: { main: cimsTokens.palette.secondary },
-    success: { main: cimsTokens.palette.success },
-    error: { main: cimsTokens.palette.error },
-    warning: { main: cimsTokens.palette.warning },
-    info: { main: cimsTokens.palette.info },
-    background: {
-      default: cimsTokens.palette.background,
-      paper: cimsTokens.palette.paper,
+const light = cimsTokens.palette;
+const dark = cimsTokens.darkPalette;
+
+/**
+ * The CIMS theme: light and dark colour schemes on CSS variables (selector `[data-light]` / `[data-dark]` on <html>),
+ * default mode "system" (follows prefers-color-scheme), dense defaults (small inputs, compact tables).
+ */
+export const cimsTheme: Theme = createTheme({
+  cssVariables: { colorSchemeSelector: 'data' },
+  colorSchemes: {
+    light: {
+      palette: {
+        primary: { main: light.primary },
+        secondary: { main: light.secondary },
+        success: { main: light.success },
+        error: { main: light.error },
+        warning: { main: light.warning },
+        info: { main: light.info },
+        background: { default: light.background, paper: light.paper },
+        text: { primary: light.textPrimary, secondary: light.textSecondary },
+        divider: light.divider,
+        status: cimsTokens.status,
+        focusRing: ring.color,
+      },
     },
-    text: {
-      primary: cimsTokens.palette.textPrimary,
-      secondary: cimsTokens.palette.textSecondary,
+    dark: {
+      palette: {
+        primary: { main: dark.primary, contrastText: dark.primaryContrastText },
+        secondary: { main: dark.secondary },
+        success: { main: dark.success },
+        error: { main: dark.error },
+        warning: { main: dark.warning },
+        info: { main: dark.info },
+        background: { default: dark.background, paper: dark.paper },
+        text: { primary: dark.textPrimary, secondary: dark.textSecondary },
+        divider: dark.divider,
+        status: cimsTokens.darkStatus,
+        focusRing: ring.darkColor,
+      },
     },
-    divider: cimsTokens.palette.divider,
   },
   typography: {
     fontFamily: cimsTokens.typography.fontFamily,
@@ -151,8 +228,8 @@ export const cimsTheme = createTheme({
       inputFontSize: cimsTokens.scanner.inputFontSize,
       inputMinHeight: cimsTokens.scanner.inputMinHeight,
     },
-    status: cimsTokens.status,
-    focusRing: cimsTokens.focusRing,
+    status: statusVars,
+    focusRing: { width: ring.width, offset: ring.offset, color: paletteVar('focusRing') },
     layout: cimsTokens.layout,
     density: cimsTokens.density,
   },
@@ -174,10 +251,10 @@ export const cimsTheme = createTheme({
           fontWeight: 600,
           padding: '1px 6px',
           borderRadius: 4,
-          border: `1px solid ${cimsTokens.palette.divider}`,
+          border: `1px solid ${paletteVar('divider')}`,
           borderBottomWidth: 2,
-          backgroundColor: cimsTokens.palette.paper,
-          color: cimsTokens.palette.textPrimary,
+          backgroundColor: paletteVar('background-paper'),
+          color: paletteVar('text-primary'),
           whiteSpace: 'nowrap',
         },
       },
@@ -191,7 +268,9 @@ export const cimsTheme = createTheme({
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          '&.Mui-focused': { boxShadow: `0 0 0 3px ${alpha(cimsTokens.palette.primary, 0.2)}` },
+          '&.Mui-focused': {
+            boxShadow: `0 0 0 3px rgba(${paletteVar('primary-mainChannel')} / 0.25)`,
+          },
         },
       },
     },

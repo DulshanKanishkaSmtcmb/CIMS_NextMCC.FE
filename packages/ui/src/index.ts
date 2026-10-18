@@ -1,5 +1,15 @@
-export { CimsThemeProvider, type CimsThemeProviderProps } from './CimsThemeProvider';
-export { cimsTheme, cimsTokens, type CimsThemeTokens } from './theme';
+export {
+  CimsThemeProvider,
+  type CimsThemeProviderProps,
+  type CimsThemeMode,
+} from './CimsThemeProvider';
+export {
+  cimsTheme,
+  cimsTokens,
+  CIMS_MODE_STORAGE_KEY,
+  CIMS_COLOR_SCHEME_STORAGE_KEY,
+  type CimsThemeTokens,
+} from './theme';
 
 export { ScanInput, type ScanInputProps } from './components/ScanInput';
 export { useFocusChain, type FocusChain, type FocusChainOptions } from './components/useFocusChain';
@@ -82,3 +92,4 @@ export {
   type KeyboardShortcut,
 } from './components/useKeyboardShortcuts';
 export { ShortcutsLegend, type ShortcutsLegendProps } from './components/ShortcutsLegend';
+export { ThemeModeToggle, type ThemeModeToggleProps } from './components/ThemeModeToggle';

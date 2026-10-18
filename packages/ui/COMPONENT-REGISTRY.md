@@ -17,9 +17,10 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 ### CimsThemeProvider (status: available)
 
-- **Purpose:** Wrap the app once: MUI theme, CSS reset, notistack toasts, scan feedback settings.
+- **Purpose:** Wrap the app once: MUI theme with the light and dark colour schemes, CSS reset, notistack toasts, scan feedback settings.
 - **Wraps:** `ThemeProvider`, `CssBaseline`, notistack `SnackbarProvider`.
-- **Key props:** `theme?` (default `cimsTheme`), `scanFeedback?` (`{ sounds?, muted?, volume? }`), `maxToasts?` (default 3).
+- **Key props:** `theme?` (default `cimsTheme`), `defaultMode?` (`light` | `dark` | `system`, default `system` = prefers-color-scheme), `scanFeedback?` (`{ sounds?, muted?, volume? }`), `maxToasts?` (default 3).
+- **Theme modes:** the chosen mode is kept in localStorage under `CIMS_MODE_STORAGE_KEY` (`toolpad-mode`, the same key the Toolpad `AppProvider` of the shell uses, so pages inside and outside the shell agree); `disableTransitionOnChange` avoids a colour sweep. Switch it with `ThemeModeToggle`.
 - **Usage:**
   ```tsx
   <CimsThemeProvider scanFeedback={{ sounds: { error: '/Sounds/computer_error.mp3' } }}>
@@ -30,13 +31,13 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 ### theme.ts: cimsTheme, cimsTokens (status: available)
 
-- **Purpose:** Light theme with dense defaults for scanner stations, and the token table behind it.
-- **Tokens:** `cimsTokens.palette` (with `textPrimary`, `textSecondary`, `divider`), `.status` (success/warning/error/info/neutral, each `main`/`fg`/`bg`, AA contrast), `.typography` (14 px base since 2026-10-18, was 13), `.radius` (6), `.spacing`, `.scanner` (`inputFontSize`, `inputMinHeight`), `.focusRing`, `.layout` (page paddings, content max width, aside widths), `.density` (`touchTarget` 44 px). Read them in `sx` as `theme.cims.*`.
+- **Purpose:** The CIMS theme (light and dark colour schemes on CSS variables, selector `[data-light]` / `[data-dark]` on `<html>`, default mode `system`) with dense defaults for scanner stations, and the token table behind it.
+- **Tokens:** `cimsTokens.palette` (with `textPrimary`, `textSecondary`, `divider`), `.status` (success/warning/error/info/neutral, each `main`/`fg`/`bg`, AA contrast), `.typography` (14 px base since 2026-10-18, was 13), `.radius` (6), `.spacing`, `.scanner` (`inputFontSize`, `inputMinHeight`), `.focusRing`, `.layout` (page paddings, content max width, aside widths), `.density` (`touchTarget` 44 px). Dark scheme: `cimsTokens.darkPalette`, `.darkStatus`, `.focusRing.darkColor`. Read them in `sx` as `theme.cims.*`: `theme.cims.status.*` and `theme.cims.focusRing.color` are `var(--mui-palette-…)` references that follow the active scheme, so never pass them to `alpha()`; for translucency use the channel variables (`rgba(${theme.vars.palette.background.paperChannel} / 0.6)`). Palette additions: `palette.status`, `palette.focusRing`.
 - **Type scale:** `h1` page title (1.5 rem/600), `h2` section (1.125 rem/600), `h3` group (1 rem/600); buttons sentence case (`textTransform: none`).
 - **Global:** visible focus ring on every ButtonBase (`.Mui-focusVisible`), soft focus halo on outlined inputs, `prefers-reduced-motion` honoured, `<kbd>` styling for shortcut legends. Rationale: legacy workspace `docs/19-ux-design-principles.md` section 8.
 - **Defaults set once:** TextField, Select, FormControl, Button, IconButton, Table are `small`; DataGrid is `compact`; Paper is `outlined`.
 - **Changing a token** changes every screen. Treat it as a design decision, not a tweak.
-- **Tests:** `components/layout.test.tsx`.
+- **Tests:** `components/layout.test.tsx`, `components/themeModes.test.tsx` (both schemes defined, AA contrast of every text/status pair in both).
 
 ### Primitives and icons (status: available)
 
@@ -320,3 +321,12 @@ The design rules behind these are in the legacy workspace `docs/19-ux-design-pri
 - **Usage:** `const shortcuts = [{ keys: 'ctrl+enter', description: 'Confirm arrival', handler: save }]; useKeyboardShortcuts(shortcuts); <ShortcutsLegend shortcuts={shortcuts} />`
 - **Notes:** do not bind keys the browser or Windows owns (Ctrl+W/T/N/L/P, Alt+F4, F5). The reserved CIMS set is in docs/19 section 5.4.
 - **Tests:** `components/uxFoundation.test.tsx`, `templates/templates.test.tsx`.
+
+### ThemeModeToggle (status: available)
+
+- **Purpose:** Light / dark / system switch for the app bar: an icon button showing the current mode ("Theme: System (dark)" as its name and tooltip) that opens a menu of the three modes (`menuitemradio`, checked state, 44 px rows). System is the default and follows the operating system.
+- **Wraps:** `IconButton`, `Tooltip`, `Menu`, `MenuItem`, MUI `useColorScheme`.
+- **Key props:** `userId?`: also keeps the choice per signed-in user (`cims-theme-mode:<userId>` in localStorage) and restores it when that user signs in, for shared station PCs.
+- **Usage:** in the shell's Toolpad `toolbarActions` slot: `<ThemeModeToggle userId={profile?.sub} />` (`apps/web/src/layouts/AppLayout.tsx`).
+- **Notes:** needs `CimsThemeProvider` or the Toolpad `AppProvider` with `cimsTheme` above it. Design rules for both modes: docs/19 section 8.1.
+- **Tests:** `components/themeModes.test.tsx`.

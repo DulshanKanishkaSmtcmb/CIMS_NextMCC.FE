@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { DashboardLayout } from '@toolpad/core/DashboardLayout';
 import { ReactRouterAppProvider } from '@toolpad/core/react-router';
 import type { Authentication, Branding, Session } from '@toolpad/core/AppProvider';
-import { cimsTheme, PageLoading } from '@cims/ui';
+import { cimsTheme, PageLoading, Stack, ThemeModeToggle } from '@cims/ui';
 import { userManager } from '../auth/userManager';
 import { TenantSwitcherContainer } from '../components/TenantSwitcherContainer';
 import { buildNavigation } from '../navigation/buildNavigation';
@@ -23,8 +23,15 @@ const AUTHENTICATION: Authentication = {
   },
 };
 
+/** App bar actions: light/dark/system theme (kept per signed-in user) and the tenant switcher. */
 function ToolbarActions() {
-  return <TenantSwitcherContainer />;
+  const userId = useAppSelector((state) => state.auth.profile?.sub);
+  return (
+    <Stack direction="row" spacing={1} alignItems="center">
+      <ThemeModeToggle userId={userId} />
+      <TenantSwitcherContainer />
+    </Stack>
+  );
 }
 
 /** Application shell: Toolpad dashboard layout with the legacy-shaped menu and the tenant switcher. */
