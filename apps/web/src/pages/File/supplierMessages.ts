@@ -60,3 +60,24 @@ export const FREIGHT_TEXTS = {
       'The air freight system (AFOS) cannot be reached now. Air shippers cannot be listed.',
   },
 } as const;
+
+/** PM Suppliers page (legacy AppJs/PMSupplier.js: the same texts as Supplier.js). */
+export const PM_SUPPLIER_MESSAGES = {
+  /** Legacy toast "Enter Supplier Name". */
+  enterName: 'Enter the PM supplier name',
+  /** Server 409 on a new save: the series of the first letter is full (docs/16 A.3 G2/G3). */
+  sequenceFull: (letter: string) =>
+    `No PM supplier code is free for names starting with “${letter}”. Nothing was changed. Contact your administrator.`,
+  /** Legacy toast "Supplier Code not Exist" (also the server's 404). */
+  doesNotExist: (code: string) =>
+    `PM supplier ${code} no longer exists. It may have been changed by someone else: reload the list.`,
+  /** Legacy alert "Error Loading Supplier Data". */
+  checkFailedTitle: 'The PM supplier could not be checked',
+  loadFailedTitle: 'The PM supplier could not be loaded',
+  /** Legacy alert "Invalid Code" (P1: legacy looked the code up in the Supplier table). */
+  notFound: (code: string) => `PM supplier ${code} was not found. Reload the list.`,
+  saved: (code: string, isNew: boolean) =>
+    isNew ? `PM supplier created with code ${code}.` : `PM supplier ${code} saved.`,
+  codeAssigned: 'Assigned when you save: the first letter of the name and the next number.',
+  countryOptional: 'Optional.',
+} as const;
