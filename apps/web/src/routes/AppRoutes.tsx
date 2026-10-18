@@ -37,6 +37,12 @@ const PmMasterPage = lazy(() =>
 const ProductCategoryPage = lazy(() =>
   import('../pages/File/ProductCategoryPage').then((m) => ({ default: m.ProductCategoryPage })),
 );
+const SupplierPage = lazy(() =>
+  import('../pages/File/SupplierPage').then((m) => ({ default: m.SupplierPage })),
+);
+const PmSupplierPage = lazy(() =>
+  import('../pages/File/PmSupplierPage').then((m) => ({ default: m.PmSupplierPage })),
+);
 const NotFoundPage = lazy(() =>
   import('../pages/NotFound/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
@@ -65,6 +71,8 @@ export function AppRoutes() {
           <Route path={PATHS.dc} element={<DcPage />} />
           <Route path={PATHS.pmMaster} element={<PmMasterPage />} />
           <Route path={PATHS.productCategory} element={<ProductCategoryPage />} />
+          <Route path={PATHS.supplier} element={<SupplierPage />} />
+          <Route path={PATHS.pmSupplier} element={<PmSupplierPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

@@ -12,4 +12,6 @@ export const PATHS = {
   dc: '/File/DC',
   pmMaster: '/File/PMMaster',
   productCategory: '/File/ProductCategory',
+  supplier: '/File/Supplier',
+  pmSupplier: '/File/PmSupplier',
 } as const;

@@ -53,6 +53,8 @@ describe('buildNavigation', () => {
     ]);
     expect(file?.children).toMatchObject([
       { title: 'Country', segment: 'File/Country' },
+      { title: 'Supplier', segment: 'File/Supplier' },
+      { title: 'PM Supplier', segment: 'File/PmSupplier' },
       { title: 'Ports...', segment: 'File/Ports' },
       { title: 'DC', segment: 'File/DC' },
       { title: 'Packing Material', segment: 'File/PMMaster' },
