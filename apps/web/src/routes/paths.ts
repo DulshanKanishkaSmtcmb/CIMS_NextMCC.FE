@@ -15,4 +15,5 @@ export const PATHS = {
   supplier: '/File/Supplier',
   pmSupplier: '/File/PmSupplier',
   rateCardEntry: '/File/RateCardEntry',
+  okToLoadReason: '/File/OkToLoadReason',
 } as const;

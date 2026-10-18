@@ -39,10 +39,11 @@ describe('buildNavigation', () => {
       'Home',
       'Data',
       'File',
+      'Loading Approvals',
       'Reference',
     ]);
 
-    const [home, data, file, reference] = navigation as Array<{
+    const [home, data, file, approvals, reference] = navigation as Array<{
       segment?: string;
       children?: Array<{ title?: string; segment?: string }>;
     }>;
@@ -60,6 +61,9 @@ describe('buildNavigation', () => {
       { title: 'Packing Material', segment: 'File/PMMaster' },
       { title: 'Product Category', segment: 'File/ProductCategory' },
       { title: 'Rate Card', segment: 'File/RateCardEntry' },
+    ]);
+    expect(approvals?.children).toMatchObject([
+      { title: 'Ok to Ship/Hold Reasons', segment: 'File/OkToLoadReason' },
     ]);
     expect(reference?.children).toMatchObject([
       { title: 'Field Captions', segment: 'Reference/FieldCaptions' },

@@ -132,7 +132,7 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Single-choice drop-down (legacy Knockout `<select data-bind="options: ..., value: ...">`).
 - **Wraps:** `TextField select`, `MenuItem`.
-- **Key props:** `label`, `value: string`, `options` (strings, or `{ value, label }` pairs, shown in order), `onChange(value)`, `inputRef`, `id`, `name`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
+- **Key props:** `label`, `value: string`, `options` (strings, or `{ value, label }` pairs, shown in order), `onChange(value)`, `ariaLabel` (name when there is no visible label, e.g. in a table cell), `inputRef`, `id`, `name`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
 - **Usage:** `<SelectField label="Shipment" value={v} options={['Local', 'Import']} onChange={setV} />` (with react-hook-form: inside a `Controller`).
 - **Tests:** `components/formFields.test.tsx`.
 
@@ -140,7 +140,7 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Plain typed text field, and read-only display boxes (legacy `readonly="readonly"` inputs). Scanner fields use `ScanInput`.
 - **Wraps:** `TextField`.
-- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `onBlur?`, `readOnly?`, `ariaLabel?` (when there is no visible label), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
+- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `onBlur?`, `readOnly?`, `ariaLabel?` (when there is no visible label), `rows?` (a text area of at least that many rows, legacy `<textarea>`; OK-to-Load Reason detail), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
 - **Usage:** `<TextInput ariaLabel="Country name" value={countryName} />`
 - **Tests:** `components/formFields.test.tsx`.
 
@@ -148,7 +148,7 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Code field with a search button: the legacy "input + magnifier button + dialog with a DataTable" lookup (Country, Ports, DC pages). Pair it with `LookupDialog`.
 - **Wraps:** `TextField` with an `InputAdornment` and `IconButton` (Search icon).
-- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `hideSearch` (no search button at all, legacy `visible:` binding; PM Master in New mode), `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `label`, `inputRef`, `name`, `disabled`, `fullWidth`.
+- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `hideSearch` (no search button at all, legacy `visible:` binding; PM Master in New mode), `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `ariaLabel` (name of the input when there is no visible label, e.g. in a table cell), `label`, `inputRef`, `name`, `disabled`, `fullWidth`.
 - **Behaviour:** a `value` set by the page (a dialog selection, a loaded record, New) replaces the typed text. A read-only field still searches unless `searchDisabled`.
 - **Usage:**
   ```tsx

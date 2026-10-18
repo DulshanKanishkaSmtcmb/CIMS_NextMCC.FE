@@ -21,6 +21,8 @@ export interface TextInputProps {
   fullWidth?: boolean;
   /** Accessible name when there is no visible label. */
   ariaLabel?: string;
+  /** A text area (legacy <textarea>) of at least this many rows instead of a one-line field. */
+  rows?: number;
 }
 
 /**
@@ -43,6 +45,7 @@ export function TextInput({
   helperText,
   fullWidth = true,
   ariaLabel,
+  rows,
 }: TextInputProps) {
   const isReadOnly = readOnly ?? onChange === undefined;
   return (
@@ -60,6 +63,8 @@ export function TextInput({
       error={error}
       helperText={helperText}
       fullWidth={fullWidth}
+      multiline={rows !== undefined}
+      minRows={rows}
       slotProps={{ htmlInput: { readOnly: isReadOnly, 'aria-label': ariaLabel } }}
     />
   );
