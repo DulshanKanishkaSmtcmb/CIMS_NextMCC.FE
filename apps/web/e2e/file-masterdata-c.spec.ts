@@ -1,9 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * /File/PMMaster and /File/ProductCategory (legacy docs/17): open each page, check the validation messages, and save.
- * Needs the SPA (`npm run dev`, with VITE_API_BASE_URL pointing at the API), the API with a Test database, and a
- * DevJwt token for a PwInfo user in E2E_DEV_TOKEN. Skips when any of them is missing.
+ * /File/PMMaster and /File/ProductCategory (legacy docs/17, redesign docs/19 section 14): open each page, check the
+ * validation messages, and save. Needs the SPA (`npm run dev`, with VITE_API_BASE_URL or DEV_API_PROXY_TARGET pointing
+ * at the API), the API with a Test database, and a DevJwt token in E2E_DEV_TOKEN or a PwInfo user name in E2E_DEV_USER.
+ * Skips when any of them is missing. Selectors: roles, labels and data-testid.
  *
  * Saves are intercepted and answered locally unless E2E_ALLOW_SAVE=1. With E2E_ALLOW_SAVE=1 the test really creates
  * (and, for PM Master, changes) one clearly named row per page in the Test database: E2E_ROW (default "ZZT1") is the
@@ -144,37 +145,33 @@ test.describe('File master pages, wave 1c', () => {
     }
   });
 
-  test('Product Category: grid, validation messages and new chain code', async ({ page }) => {
+  test('Product Category: list, validation messages and a new chain code', async ({ page }) => {
     const posted = interceptSaves(page, '/master-data/product-categories');
     await signIn(page);
     await page.goto('/File/ProductCategory');
-    await expect(page.getByRole('heading', { name: 'Product Category' })).toBeVisible();
-    // the existing chain codes are listed with the legacy column titles
-    await expect(page.locator('#dtStuffingSum').getByText('Chain Code').first()).toBeVisible({
-      timeout: 20_000,
-    });
-    await expect(page.locator('#dtStuffingSum').getByText('Childrensware').first()).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Chain codes' })).toBeVisible();
+    // the existing chain codes are listed
+    const grid = page.getByTestId('chain-code-grid');
+    await expect(grid.getByText('Chain code').first()).toBeVisible({ timeout: 20_000 });
+    await expect(grid.getByText('Childrensware').first()).toBeVisible();
 
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Can not be empty Chain Code')).toBeVisible();
-    await page.locator('#PMDescription').fill('QQ');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Chain Code must be exactly 1 character long')).toBeVisible();
-    await page.locator('#PMDescription').fill('a');
-    await page.getByRole('textbox', { name: 'Chain Name' }).fill('Duplicate test');
-    await page.getByRole('textbox', { name: 'TP Partner Name' }).fill('NEXT');
-    await page.getByRole('textbox', { name: 'Range Box EAN' }).fill('DUP');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Can not Duplicate same Chain Code')).toBeVisible();
+    const addButton = page.getByRole('button', { name: 'Add chain code' });
+    await addButton.click();
+    await expect(page.getByTestId('save-problems')).toContainText('Enter the chain code');
+    await page.getByRole('textbox', { name: /^Chain code/ }).fill('a');
+    await page.getByRole('textbox', { name: 'Chain name' }).fill('Duplicate test');
+    await page.getByRole('textbox', { name: 'TP partner name' }).fill('NEXT');
+    await page.getByRole('textbox', { name: 'Range box EAN' }).fill('DUP');
+    await addButton.click();
+    await expect(page.getByTestId('save-problems')).toContainText('is already used by');
 
-    await page.locator('#PMDescription').fill(chain);
-    await page.getByRole('textbox', { name: 'Chain Name' }).fill(`${row} CHAIN`);
-    await page.getByRole('textbox', { name: 'TP Partner Name' }).fill('ZZT');
-    await page.getByRole('textbox', { name: 'Range Box EAN' }).fill('ZZT');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Data Saved Successfully')).toBeVisible();
-    await expect(page.locator('#PMDescription')).toHaveValue('');
-    await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+    await page.getByRole('textbox', { name: /^Chain code/ }).fill(chain);
+    await page.getByRole('textbox', { name: 'Chain name' }).fill(`${row} CHAIN`);
+    await page.getByRole('textbox', { name: 'TP partner name' }).fill('ZZT');
+    await page.getByRole('textbox', { name: 'Range box EAN' }).fill('ZZT');
+    await addButton.click();
+    await expect(page.getByTestId('save-result')).toContainText(`Chain code ${chain}`);
+    await expect(page.getByRole('textbox', { name: /^Chain code/ })).toHaveValue('');
     if (allowSave) {
       await expect(page.getByText(`${row} CHAIN`)).toBeVisible();
     } else {

@@ -8,7 +8,7 @@ import type { ChainCode } from '../../services/packingMaterialApi';
 import { ProductCategoryPage } from './ProductCategoryPage';
 
 // DataGrid interactions are slow in jsdom.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 }); // slower when the suites run in parallel
 
 const chain = (code: string, name: string, tp: string, range: string, ean: string): ChainCode => ({
   chainCode: code,
@@ -57,119 +57,117 @@ afterEach(() => {
   saveReply = () => SAVED;
 });
 
-const field = (label: string) => screen.getByRole('textbox', { name: label });
-const save = () => screen.getByRole('button', { name: 'Save' });
-const range = () => screen.getByRole('combobox', { name: 'Range' });
+const field = (label: RegExp) => screen.getByRole('textbox', { name: label });
+const add = () => screen.getByRole('button', { name: 'Add chain code' });
+const rangeGroup = () => screen.getByRole('group', { name: 'Range' });
 const writes = () => calls.filter((c) => c.method === 'POST');
-const grid = () => document.getElementById('dtStuffingSum') as HTMLElement;
+const grid = () => screen.queryByTestId('chain-code-grid');
+const problems = () => screen.getByTestId('save-problems');
 
 async function fill(
   user: ReturnType<typeof userEvent.setup>,
   values: { code?: string; name?: string; tp?: string; ean?: string },
 ) {
-  if (values.code !== undefined) await user.type(field('Chain Code'), values.code);
-  if (values.name !== undefined) await user.type(field('Chain Name'), values.name);
-  if (values.tp !== undefined) await user.type(field('TP Partner Name'), values.tp);
-  if (values.ean !== undefined) await user.type(field('Range Box EAN'), values.ean);
+  if (values.code !== undefined) await user.type(field(/^Chain code/), values.code);
+  if (values.name !== undefined) await user.type(field(/^Chain name/), values.name);
+  if (values.tp !== undefined) await user.type(field(/TP partner name/), values.tp);
+  if (values.ean !== undefined) await user.type(field(/Range box EAN/), values.ean);
+}
+
+async function ready() {
+  await screen.findByText('Womenswear');
+  await waitFor(() =>
+    expect(within(rangeGroup()).getByRole('button', { name: 'Womens' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    ),
+  );
 }
 
 describe('ProductCategoryPage', () => {
-  it('shows the legacy fields in order, the first range and the grid of existing chain codes', async () => {
+  it('shows the add form (first range chosen) above the existing chain codes', async () => {
     setup();
 
-    expect(screen.getByRole('heading', { name: 'Product Category' })).toBeInTheDocument();
-    await waitFor(() => expect(range()).toHaveTextContent('Womens'));
-    await screen.findByText('Womenswear');
+    expect(screen.getByRole('heading', { level: 1, name: 'Chain codes' })).toBeInTheDocument();
+    expect(screen.getByText('File · Product Category')).toBeInTheDocument();
+    await ready();
     const ordered = [
-      field('Chain Code'),
-      field('Chain Name'),
-      range(),
-      field('TP Partner Name'),
-      field('Range Box EAN'),
-      screen.getByRole('button', { name: 'Copy' }),
-      grid(),
-      save(),
-      screen.getByRole('button', { name: 'Close' }),
+      field(/^Chain code/),
+      field(/^Chain name/),
+      rangeGroup(),
+      field(/TP partner name/),
+      field(/Range box EAN/),
+      add(),
+      screen.getByRole('region', { name: 'Existing chain codes' }),
     ];
     ordered.slice(1).forEach((node, i) => {
       expect(
         ordered[i].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    // the legacy page gave the Chain Code input the id of the PM Description box it was copied from
-    expect(field('Chain Code')).toHaveAttribute('id', 'PMDescription');
-    expect(screen.queryByRole('combobox', { name: 'Option' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'New' })).not.toBeInTheDocument();
-
-    const headers = within(grid())
-      .getAllByRole('columnheader')
-      .map((h) => h.textContent);
-    expect(headers).toEqual([
-      'Chain Code',
-      'Chain Name',
-      'TP Partner Name',
-      'Range',
-      'Range Box EAN',
+    const table = grid() as HTMLElement;
+    for (const title of ['Chain code', 'Chain name', 'Range', 'TP partner name', 'Range box EAN']) {
+      expect(within(table).getByText(title)).toBeInTheDocument();
+    }
+    expect(within(table).getByText('Childrensware')).toBeInTheDocument();
+    expect(screen.getByTestId('code-count')).toHaveTextContent('2 codes');
+    expect(calls.map((c) => `${c.method} ${c.url}`).sort()).toEqual([
+      `GET ${BASE}`,
+      `GET ${BASE}/ranges`,
     ]);
-    expect(await within(grid()).findByText('Womenswear')).toBeInTheDocument();
-    expect(within(grid()).getByText('LIPSY/NEXT/FLT')).toBeInTheDocument();
-    ['Copy', 'CSV', 'Excel', 'PDF', 'Print'].forEach((name) =>
-      expect(screen.getByRole('button', { name })).toBeInTheDocument(),
-    );
   });
 
-  it('checks the fields in the legacy order with the legacy messages', async () => {
+  it('checks the fields in the legacy order, one at a time, and sends nothing', async () => {
     const user = userEvent.setup();
     setup();
-    await waitFor(() => expect(range()).toHaveTextContent('Womens'));
+    await ready();
 
-    await user.click(save());
-    expect(await screen.findByText('Can not be empty Chain Code')).toBeInTheDocument();
+    await user.click(add());
+    expect(problems()).toHaveTextContent('Enter the chain code');
     await fill(user, { code: 'QQ' });
-    await user.click(save());
-    expect(
-      await screen.findByText('Chain Code must be exactly 1 character long'),
-    ).toBeInTheDocument();
-    await user.clear(field('Chain Code'));
-    await fill(user, { code: 'Q' });
-    await user.click(save());
-    expect(await screen.findByText('Can not be empty Chain Name')).toBeInTheDocument();
-    await fill(user, { name: 'Q wear' });
-    await user.click(save());
-    expect(await screen.findByText('Can not be empty TP Partner Name')).toBeInTheDocument();
-    await fill(user, { tp: 'NEXT' });
-    await user.click(save());
-    expect(await screen.findByText('Can not be empty Range Box EAN')).toBeInTheDocument();
-
+    // the field takes one character only
+    expect(field(/^Chain code/)).toHaveValue('Q');
+    await user.click(add());
+    expect(problems()).toHaveTextContent('Enter the chain name');
+    await fill(user, { name: 'Name' });
+    await user.click(add());
+    expect(problems()).toHaveTextContent('Enter the TP partner name');
+    await fill(user, { tp: 'TP' });
+    await user.click(add());
+    expect(problems()).toHaveTextContent('Enter the range box EAN');
+    expect(field(/Range box EAN/)).toHaveAttribute('aria-invalid', 'true');
     expect(writes()).toHaveLength(0);
-    expect(save()).toBeEnabled();
   });
 
-  it('refuses a chain code that is already in the grid, whatever its case, without posting', async () => {
+  it('refuses a chain code that is already listed, whatever its case, without posting', async () => {
     const user = userEvent.setup();
     setup();
-    await screen.findByText('Womenswear');
+    await ready();
 
-    await fill(user, { code: 'a', name: 'Again', tp: 'NEXT', ean: 'AAA' });
-    await user.click(save());
+    await fill(user, { code: 'a' });
+    await user.tab();
+    expect(field(/^Chain code/)).toHaveAccessibleDescription(
+      'Chain code A is already used by Womenswear. Choose another code.',
+    );
+    await fill(user, { name: 'Again', tp: 'NEXT', ean: 'AAA' });
+    await user.click(add());
 
-    expect(await screen.findByText('Can not Duplicate same Chain Code')).toBeInTheDocument();
+    expect(problems()).toHaveTextContent('Chain code A is already used by Womenswear.');
     expect(writes()).toHaveLength(0);
-    expect(save()).toBeEnabled();
   });
 
-  it('saves with POST, clears the form except the Range, enables Save and reloads the grid', async () => {
+  it('adds with POST, says so, clears the form except the range and reads the list again', async () => {
     const user = userEvent.setup();
     setup();
-    await screen.findByText('Womenswear');
+    await ready();
 
-    await user.click(range());
-    await user.click(await screen.findByRole('option', { name: 'Childrens' }));
+    await user.click(within(rangeGroup()).getByRole('button', { name: 'Childrens' }));
     await fill(user, { code: 'Z', name: 'Zed wear', tp: 'NEXT', ean: 'ZZR' });
-    await user.click(save());
+    await user.click(add());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
-    expect(writes()[0].url).toBe(BASE);
+    expect(await screen.findByTestId('save-result')).toHaveTextContent(
+      'Chain code Z (Zed wear) added.',
+    );
     expect(writes()[0].body).toEqual({
       chainCode: 'Z',
       chainName: 'Zed wear',
@@ -177,63 +175,83 @@ describe('ProductCategoryPage', () => {
       tpPartnerName: 'NEXT',
       rangeBoxEan: 'ZZR',
     });
-    expect(field('Chain Code')).toHaveValue('');
-    expect(field('Chain Name')).toHaveValue('');
-    expect(field('TP Partner Name')).toHaveValue('');
-    expect(field('Range Box EAN')).toHaveValue('');
-    expect(range()).toHaveTextContent('Childrens');
-    expect(save()).toBeEnabled();
-    expect(await within(grid()).findByText('Zed wear')).toBeInTheDocument();
+    expect(field(/^Chain code/)).toHaveValue('');
+    expect(field(/^Chain name/)).toHaveValue('');
+    expect(field(/TP partner name/)).toHaveValue('');
+    expect(field(/Range box EAN/)).toHaveValue('');
+    expect(within(rangeGroup()).getByRole('button', { name: 'Childrens' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(field(/^Chain code/)).toHaveFocus();
+    expect(await within(grid() as HTMLElement).findByText('Zed wear')).toBeInTheDocument();
     expect(calls.filter((c) => c.method === 'GET' && c.url === BASE)).toHaveLength(2);
   });
 
-  it('shows the API message of a refused save and enables Save again (legacy stayed stuck)', async () => {
+  it('shows the API message of a refused save and keeps the form', async () => {
     const user = userEvent.setup();
     saveReply = () => ({
       status: 400,
       data: { code: 'VALIDATION_FAILED', errors: { Range: ['Select a valid Range'] } },
     });
     setup();
-    await screen.findByText('Womenswear');
+    await ready();
 
     await fill(user, { code: 'Z', name: 'Zed wear', tp: 'NEXT', ean: 'ZZR' });
-    await user.click(save());
+    await user.click(add());
 
-    expect(await screen.findByText('Data not Saved [Select a valid Range]')).toBeInTheDocument();
-    expect(save()).toBeEnabled();
-    expect(field('Chain Code')).toHaveValue('Z');
+    const error = await screen.findByTestId('detail-error');
+    expect(error).toHaveTextContent('Data not saved');
+    expect(error).toHaveTextContent('Select a valid Range');
+    expect(add()).toBeEnabled();
+    expect(field(/^Chain name/)).toHaveValue('Zed wear');
   });
 
-  it('maps a 409 from the server to the duplicate text', async () => {
+  it('maps a 409 from the server to "already exists" on the code', async () => {
     const user = userEvent.setup();
     saveReply = () => ({ status: 409, data: { code: 'CHAIN_CODE_EXISTS' } });
     setup();
-    await screen.findByText('Womenswear');
+    await ready();
 
     await fill(user, { code: 'Z', name: 'Zed wear', tp: 'NEXT', ean: 'ZZR' });
-    await user.click(save());
+    await user.click(add());
 
-    expect(await screen.findByText('Can not Duplicate same Chain Code')).toBeInTheDocument();
-    expect(save()).toBeEnabled();
+    expect(await screen.findByTestId('save-problems')).toHaveTextContent(
+      'Chain code Z already exists.',
+    );
   });
 
-  it('narrows the grid with the search box and stubs the export buttons', async () => {
+  it('narrows the list with the search box and says that export is not available yet', async () => {
     const user = userEvent.setup();
     setup();
-    await screen.findByText('Womenswear');
+    await ready();
 
-    await user.type(field('Search:'), 'child');
-    expect(within(grid()).queryByText('Womenswear')).not.toBeInTheDocument();
-    expect(within(grid()).getByText('Childrensware')).toBeInTheDocument();
+    await user.type(field(/Search chain codes/), 'child');
+    expect(within(grid() as HTMLElement).queryByText('Womenswear')).not.toBeInTheDocument();
+    expect(within(grid() as HTMLElement).getByText('Childrensware')).toBeInTheDocument();
+    await user.type(field(/Search chain codes/), 'zzz');
+    expect(screen.getByText('No chain codes match “childzzz”')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Excel' }));
-    expect(await screen.findByText('Excel export is not available yet')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    expect(screen.getByTestId('export-hint')).toHaveTextContent(
+      'Export (copy, CSV, Excel, PDF, print) is not available yet.',
+    );
   });
 
-  it('shows no grid when there are no chain codes', async () => {
+  it('says when there are no chain codes yet', async () => {
     setup([]);
 
-    await waitFor(() => expect(range()).toHaveTextContent('Womens'));
+    expect(await screen.findByText('No chain codes yet')).toBeInTheDocument();
     expect(grid()).toBeNull();
+  });
+
+  it('adds with Ctrl+S', async () => {
+    const user = userEvent.setup();
+    setup();
+    await ready();
+
+    await fill(user, { code: 'Y', name: 'Why', tp: 'NEXT', ean: 'YYY' });
+    await user.keyboard('{Control>}s{/Control}');
+    expect(await screen.findByTestId('save-result')).toHaveTextContent('Chain code Y (Why) added.');
   });
 });
