@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
@@ -64,6 +64,15 @@ const PENDING: PendingArrivals = {
       containerNo: 'MSCU1234567',
       containerType: '40HC',
     },
+    {
+      inboundEtd: '2026-10-17T00:00:00',
+      inboundVesselOrderNo: 1,
+      inboundContainerOrderNo: 2,
+      vesselName: 'MSC ANNA',
+      loadReference: 'LR-78',
+      containerNo: 'TGHU7654321',
+      containerType: '20GP',
+    },
   ],
 };
 
@@ -74,30 +83,24 @@ interface Call {
   body?: unknown;
 }
 
-let calls: Call[] = [];
-let pendingResponse: () => { status: number; data: unknown } = () => ({
-  status: 200,
-  data: PENDING,
-});
-let confirmResponse: () => { status: number; data: unknown } = () => ({
-  status: 200,
-  data: {
-    contractsConfirmed: 1,
-    importVesselUpdated: false,
-    importContainerUpdated: false,
-    message: 'Data Saved Successfully',
-  },
-});
+type Reply = { status: number; data: unknown } | 'network-error';
 
-function respond(config: InternalAxiosRequestConfig, status: number, data: unknown) {
+let calls: Call[] = [];
+let pendingResponse: () => Reply;
+let confirmResponse: () => Reply;
+
+function respond(config: InternalAxiosRequestConfig, reply: Reply) {
+  if (reply === 'network-error') {
+    return Promise.reject(new AxiosError('Network Error', 'ERR_NETWORK', config));
+  }
   const response = {
-    data,
-    status,
-    statusText: String(status),
+    data: reply.data,
+    status: reply.status,
+    statusText: String(reply.status),
     headers: new AxiosHeaders(),
     config,
   };
-  if (status >= 400) {
+  if (reply.status >= 400) {
     return Promise.reject(new AxiosError('failed', 'ERR_BAD_REQUEST', config, null, response));
   }
   return Promise.resolve(response);
@@ -106,6 +109,15 @@ function respond(config: InternalAxiosRequestConfig, status: number, data: unkno
 beforeEach(() => {
   calls = [];
   pendingResponse = () => ({ status: 200, data: PENDING });
+  confirmResponse = () => ({
+    status: 200,
+    data: {
+      contractsConfirmed: 1,
+      importVesselUpdated: true,
+      importContainerUpdated: true,
+      message: 'Data Saved Successfully',
+    },
+  });
   configure({
     baseURL: 'http://api.test',
     axiosConfig: {
@@ -117,23 +129,24 @@ beforeEach(() => {
           params: config.params as Record<string, string> | undefined,
           body: typeof config.data === 'string' ? JSON.parse(config.data) : config.data,
         });
-        if (url.endsWith('/confirm/dcs'))
-          return respond(config, 200, [{ whDes: 'JO JO WEB' }, { whDes: 'Nordstrom Online' }]);
+        if (url.endsWith('/confirm/dcs')) {
+          return respond(config, {
+            status: 200,
+            data: [{ whDes: 'JO JO WEB' }, { whDes: 'Nordstrom Online' }],
+          });
+        }
         if (url.endsWith('/confirm/countries')) {
-          return respond(config, 200, [
-            { countryCode: 'IND', countryName: 'INDIA' },
-            { countryCode: 'PAK', countryName: 'PAKISTAN' },
-          ]);
+          return respond(config, {
+            status: 200,
+            data: [
+              { countryCode: 'IND', countryName: 'INDIA' },
+              { countryCode: 'PAK', countryName: 'PAKISTAN' },
+            ],
+          });
         }
-        if (url.endsWith('/confirm/pending')) {
-          const r = pendingResponse();
-          return respond(config, r.status, r.data);
-        }
-        if (url.endsWith('/arrivals/confirm')) {
-          const r = confirmResponse();
-          return respond(config, r.status, r.data);
-        }
-        return respond(config, 404, {});
+        if (url.endsWith('/confirm/pending')) return respond(config, pendingResponse());
+        if (url.endsWith('/arrivals/confirm')) return respond(config, confirmResponse());
+        return respond(config, { status: 404, data: {} });
       },
     },
   });
@@ -150,49 +163,54 @@ function renderPage() {
   });
 }
 
-async function loadContracts(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Load Contracts' }));
-  expect(await screen.findByText('Contracts Loaded successfully')).toBeInTheDocument();
+type User = ReturnType<typeof userEvent.setup>;
+
+async function loadContracts(user: User) {
+  await user.click(screen.getByTestId('load-contracts'));
+  expect(await screen.findByTestId('load-summary')).toHaveTextContent(
+    'Loaded 2 contracts · 1 supplier · 2 container lines',
+  );
 }
 
-async function typeArrivalDate(user: ReturnType<typeof userEvent.setup>, digits: string) {
+async function typeArrivalDate(user: User, digits: string) {
   await user.click(screen.getAllByRole('spinbutton', { name: 'Day' })[0]);
   await user.keyboard(digits);
 }
 
-const grid = (id: string) => document.getElementById(id) as HTMLElement;
+const pendingList = () => screen.getByTestId('pending-list');
+const selectedList = () => screen.getByTestId('selected-list');
+const scanField = () => screen.getByRole('textbox', { name: 'Scan a container or supplier' });
 
 describe('ConfirmArrivalPage', () => {
-  it('shows the legacy fields in order with their defaults', async () => {
+  it('shows the three steps, the defaults and the action bar before anything is loaded', () => {
     renderPage();
 
-    expect(
-      screen.getByRole('heading', { name: 'Contract - Confirm Arrivals' }),
-    ).toBeInTheDocument();
-    const labels = ['Shipment', 'DC', 'Country'].map((name) =>
-      screen.getByRole('combobox', { name }),
-    );
-    expect(labels[0]).toHaveTextContent('Local');
-    expect(labels[1]).toHaveTextContent('All');
-    expect(labels[2]).toHaveTextContent('All');
-    // Shipment, then the Load Contracts button (id kept), then DC, then Country.
-    const load = screen.getByRole('button', { name: 'Load Contracts' });
-    expect(load).toHaveAttribute('id', 'btnLoadPOs');
-    expect(labels[0].compareDocumentPosition(load) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(load.compareDocumentPosition(labels[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(
-      screen.getByRole('group', { name: 'Arrival Date [dd/mm/yyyy hh:mm]' }),
-    ).toBeInTheDocument();
-    for (const name of ['Save', 'New', 'Close', 'Select All']) {
-      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Confirm arrivals' })).toBeInTheDocument();
+    for (const step of [
+      /^Step 1:\s*Find pending contracts$/,
+      /^Step 2:\s*Pick containers or suppliers$/,
+      /^Step 3:\s*Choose the contracts for this arrival$/,
+    ]) {
+      expect(screen.getByRole('region', { name: step })).toBeInTheDocument();
     }
-    // Supplier and container boxes stay hidden until a load returns rows.
-    expect(
-      screen.queryByText('Supplier List - Pending Arrival Confirmation'),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Local', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'DC' })).toHaveTextContent('All');
+    expect(screen.getByRole('combobox', { name: 'Country' })).toHaveTextContent('All');
+    expect(screen.getByText('All countries')).toBeInTheDocument();
+    expect(screen.getByTestId('start-empty')).toHaveTextContent('Load pending contracts to start');
+    expect(screen.getByText('Nothing loaded yet')).toBeInTheDocument();
+
+    const bar = screen.getByRole('region', { name: 'Confirm the arrival' });
+    expect(within(bar).getByRole('group', { name: /Arrival date and time/ })).toBeInTheDocument();
+    expect(within(bar).getByTestId('selected-summary')).toHaveTextContent('Contracts: 0');
+    expect(within(bar).getByRole('button', { name: 'Confirm arrival' })).toBeEnabled();
+    expect(within(bar).getByRole('button', { name: 'Start over' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Keyboard shortcuts' })).toHaveTextContent(
+      'Confirm arrival',
+    );
   });
 
-  it('shows the country name for the selected code and nothing for All', async () => {
+  it('shows the country name under the country code', async () => {
     const user = userEvent.setup();
     renderPage();
 
@@ -200,23 +218,43 @@ describe('ConfirmArrivalPage', () => {
     await user.click(screen.getByRole('combobox', { name: 'Country' }));
     await user.click(await screen.findByRole('option', { name: 'PAK' }));
 
-    expect(screen.getByRole('textbox', { name: 'Country name' })).toHaveValue('PAKISTAN');
+    expect(screen.getByText('PAKISTAN')).toBeInTheDocument();
   });
 
-  it('loads contracts with the chosen filters and fills the supplier and container lists unticked', async () => {
+  it('loads with the chosen filters, lists the lines unticked and moves the cursor to the scan field', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(screen.getByRole('combobox', { name: 'Shipment' }));
-    await user.click(screen.getByRole('option', { name: 'Import' }));
+    await user.click(screen.getByRole('button', { name: 'Import' }));
     await loadContracts(user);
 
     const pending = calls.find((c) => c.url.endsWith('/confirm/pending'));
     expect(pending?.params).toEqual({ cargoFrom: 'Import', dc: 'All', country: 'All' });
-    expect(screen.getByText('Supplier List - Pending Arrival Confirmation')).toBeInTheDocument();
+    expect(screen.getByTestId('load-summary')).toHaveTextContent(
+      'for Import, all DCs, all countries',
+    );
     expect(screen.getByRole('checkbox', { name: 'Supplier S1' })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Container MSCU1234567' })).not.toBeChecked();
-    expect(within(grid('tblPending')).getByText('No contracts')).toBeInTheDocument();
+    // Each line says how many contracts it brings in.
+    expect(
+      within(screen.getByTestId('container-list')).getByText('1 contract'),
+    ).toBeInTheDocument();
+    expect(scanField()).toHaveFocus();
+    expect(
+      within(pendingList()).getByText('Tick a container or supplier to list its contracts here'),
+    ).toBeInTheDocument();
+  });
+
+  it('warns when the filters change after a load', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await loadContracts(user);
+
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+
+    expect(screen.getByTestId('filters-changed')).toHaveTextContent(
+      'The lists still show Local, all DCs, all countries',
+    );
   });
 
   it('moves rows between Pending and Selected and keeps the totals', async () => {
@@ -225,55 +263,125 @@ describe('ConfirmArrivalPage', () => {
     await loadContracts(user);
 
     await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
-    expect(within(grid('tblPending')).getByText('2026/00001')).toBeInTheDocument();
-    expect(screen.getByTestId('pendingTotals')).toHaveTextContent('1 Contracts');
-    expect(screen.getByTestId('pendingTotals')).toHaveTextContent('Gross Weight 10.26');
+    expect(within(pendingList()).getByText('2026/00001')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-totals')).toHaveTextContent('Contracts: 1');
+    expect(screen.getByTestId('pending-totals')).toHaveTextContent('Gross weight: 10.26');
 
     await user.click(screen.getByRole('checkbox', { name: 'Container MSCU1234567' }));
-    expect(screen.getByTestId('pendingTotals')).toHaveTextContent('2 Contracts');
-    expect(screen.getByTestId('pendingTotals')).toHaveTextContent('CBM 0.335');
+    expect(screen.getByTestId('pending-totals')).toHaveTextContent('Contracts: 2');
+    expect(screen.getByTestId('pending-totals')).toHaveTextContent('CBM: 0.335');
 
-    await user.click(within(grid('tblPending')).getAllByRole('button', { name: 'Add' })[0]);
-    expect(within(grid('tblSelected')).getByText('2026/00001')).toBeInTheDocument();
-    expect(screen.getByTestId('selectedTotals')).toHaveTextContent('1 Contracts');
+    await user.click(screen.getByRole('button', { name: 'Add 2026/00001' }));
+    expect(within(selectedList()).getByText('2026/00001')).toBeInTheDocument();
+    expect(screen.getByTestId('selected-totals')).toHaveTextContent('Contracts: 1');
+    expect(screen.getByTestId('selected-summary')).toHaveTextContent('Contracts: 1');
 
-    await user.click(screen.getByRole('button', { name: 'Select All' }));
-    expect(screen.getByTestId('pendingTotals')).toHaveTextContent('0 Contracts');
-    expect(screen.getByTestId('selectedTotals')).toHaveTextContent('2 Contracts');
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
+    expect(screen.getByTestId('pending-totals')).toHaveTextContent('Contracts: 0');
+    expect(screen.getByTestId('selected-totals')).toHaveTextContent('Contracts: 2');
 
-    await user.click(within(grid('tblSelected')).getAllByRole('button', { name: 'Remove' })[1]);
-    expect(within(grid('tblPending')).getByText('2026/00002')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove 2026/00002' }));
+    expect(within(pendingList()).getByText('2026/00002')).toBeInTheDocument();
 
     // Unticking the supplier takes its rows out of both lists.
     await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
-    expect(within(grid('tblSelected')).queryByText('2026/00001')).not.toBeInTheDocument();
+    expect(within(selectedList()).queryByText('2026/00001')).not.toBeInTheDocument();
   });
 
-  it('asks for the arrival date first, then for a selection, with the legacy messages', async () => {
+  it('picks a line from the scan field, and says why when nothing matches', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(scanField(), 'MSCU1234567{Enter}');
+    expect(screen.getByTestId('pick-result')).toHaveTextContent('Load contracts first');
+
+    await loadContracts(user);
+    await user.type(scanField(), 'mscu1234567{Enter}');
+    expect(screen.getByRole('checkbox', { name: 'Container MSCU1234567' })).toBeChecked();
+    expect(screen.getByTestId('pick-result')).toHaveTextContent(
+      'Picked container MSCU1234567: 1 contract listed under Pending.',
+    );
+    expect(within(pendingList()).getByText('2026/00002')).toBeInTheDocument();
+
+    // Scanning it again does not untick it.
+    await user.type(scanField(), 'MSCU1234567{Enter}');
+    expect(screen.getByRole('checkbox', { name: 'Container MSCU1234567' })).toBeChecked();
+    expect(screen.getByTestId('pick-result')).toHaveTextContent('already picked');
+
+    await user.type(scanField(), 's1{Enter}');
+    expect(screen.getByRole('checkbox', { name: 'Supplier S1' })).toBeChecked();
+
+    await user.type(scanField(), 'XYZ{Enter}');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'No pending container or supplier matches “XYZ”',
+    );
+  });
+
+  it('tells which container is updated when more than one is ticked, and sends that one', async () => {
     const user = userEvent.setup();
     renderPage();
     await loadContracts(user);
 
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Enter Confirm Arrival Date')).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Container TGHU7654321' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Container MSCU1234567' }));
+    expect(screen.getByTestId('first-container-hint')).toHaveTextContent(
+      'Only the first ticked container (MSCU1234567) is updated',
+    );
+    const lines = within(screen.getByTestId('container-list'));
+    expect(lines.getAllByText('Updated on confirm')).toHaveLength(1);
+    expect(
+      lines.getByText('Not saved: only the first ticked container is updated.'),
+    ).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
     await typeArrivalDate(user, '181020261430');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Any Contracts not Selected to Save.')).toBeInTheDocument();
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+
+    await screen.findByTestId('save-result');
+    const post = calls.find((c) => c.method === 'POST');
+    expect((post?.body as { container: { containerNo: string } }).container.containerNo).toBe(
+      'MSCU1234567',
+    );
   });
 
-  it('saves the selected contracts with a local ISO date and the first ticked container', async () => {
+  it('asks for the arrival date first, then for a selection, and sends nothing', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await loadContracts(user);
+
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+    expect(await screen.findByText('Enter the arrival date and time')).toBeInTheDocument();
+    expect(screen.queryByTestId('selection-error')).not.toBeInTheDocument();
+    // The cursor goes to the field that needs attention.
+    expect(screen.getAllByRole('spinbutton', { name: 'Day' })[0]).toHaveFocus();
+
+    await typeArrivalDate(user, '181020261430');
+    expect(screen.queryByText('Enter the arrival date and time')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+    expect(await screen.findByTestId('selection-error')).toHaveTextContent(
+      'Add at least one contract to the selection before confirming',
+    );
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+
+    // The error goes away as soon as something is selected.
+    await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
+    await user.click(screen.getByRole('button', { name: 'Add 2026/00001' }));
+    expect(screen.queryByTestId('selection-error')).not.toBeInTheDocument();
+  });
+
+  it('confirms with the same request as before and keeps the lists afterwards', async () => {
     const user = userEvent.setup();
     renderPage();
     await loadContracts(user);
 
     await user.click(screen.getByRole('checkbox', { name: 'Container MSCU1234567' }));
-    await user.click(screen.getByRole('button', { name: 'Select All' }));
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
     await typeArrivalDate(user, '181020261430');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-result')).toHaveTextContent(
+      'Arrival confirmed for 1 contract (18/10/2026 14:30).',
+    );
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.url).toBe('/api/v1/arrivals/confirm');
     expect(post?.body).toEqual({
@@ -290,10 +398,30 @@ describe('ConfirmArrivalPage', () => {
       },
     });
     // The lists stay on screen after the save, as on the legacy page.
-    expect(within(grid('tblSelected')).getByText('2026/00002')).toBeInTheDocument();
+    expect(within(selectedList()).getByText('2026/00002')).toBeInTheDocument();
   });
 
-  it('shows the server message in the legacy "Data not Saved" toast', async () => {
+  it('sends the edited container no of the first ticked container', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await loadContracts(user);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Container MSCU1234567' }));
+    const field = screen.getByRole('textbox', { name: 'Container no' });
+    await user.clear(field);
+    await user.type(field, 'MSCU7777777');
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
+    await typeArrivalDate(user, '181020261430');
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+
+    await screen.findByTestId('save-result');
+    const post = calls.find((c) => c.method === 'POST');
+    expect((post?.body as { container: { containerNo: string } }).container.containerNo).toBe(
+      'MSCU7777777',
+    );
+  });
+
+  it('shows the server message under "Data not saved"', async () => {
     confirmResponse = () => ({
       status: 400,
       data: {
@@ -306,45 +434,102 @@ describe('ConfirmArrivalPage', () => {
     renderPage();
     await loadContracts(user);
     await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
-    await user.click(screen.getByRole('button', { name: 'Select All' }));
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
     await typeArrivalDate(user, '181020261430');
 
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
 
-    expect(
-      await screen.findByText('Data not Saved [Contract Data not found.[Empty List]]'),
-    ).toBeInTheDocument();
+    const alert = await screen.findByTestId('save-result');
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveTextContent('Data not saved');
+    expect(alert).toHaveTextContent('Nothing was changed.');
+    expect(alert).toHaveTextContent('Contract Data not found.[Empty List]');
   });
 
-  it('reports a failed load with the legacy message', async () => {
+  it('offers a retry when the server cannot be reached', async () => {
+    confirmResponse = () => 'network-error';
+    const user = userEvent.setup();
+    renderPage();
+    await loadContracts(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
+    await typeArrivalDate(user, '181020261430');
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+
+    const alert = await screen.findByTestId('save-result');
+    expect(alert).toHaveTextContent('The server could not be reached');
+    confirmResponse = () => ({
+      status: 200,
+      data: {
+        contractsConfirmed: 1,
+        importVesselUpdated: false,
+        importContainerUpdated: false,
+        message: '',
+      },
+    });
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText(/Arrival confirmed for 1 contract/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2);
+  });
+
+  it('reports a failed load with a retry', async () => {
     pendingResponse = () => ({ status: 500, data: { title: 'An unexpected error occurred.' } });
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(screen.getByRole('button', { name: 'Load Contracts' }));
+    await user.click(screen.getByTestId('load-contracts'));
 
-    expect(
-      await screen.findByText('Something went wrong.Please contact administrator'),
-    ).toBeInTheDocument();
+    const alert = await screen.findByTestId('load-error');
+    expect(alert).toHaveTextContent('Contracts could not be loaded');
+    pendingResponse = () => ({ status: 200, data: PENDING });
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByTestId('load-summary')).toBeInTheDocument();
   });
 
-  it('New clears the date and the lists but keeps the filters', async () => {
+  it('Start over asks first, then clears the date and the lists but keeps the filters', async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole('combobox', { name: 'Shipment' }));
-    await user.click(screen.getByRole('option', { name: 'Import' }));
+    await user.click(screen.getByRole('button', { name: 'Import' }));
     await loadContracts(user);
     await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
     await typeArrivalDate(user, '181020261430');
 
-    await user.click(screen.getByRole('button', { name: 'New' }));
+    await user.click(screen.getByRole('button', { name: 'Start over' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Start over?' });
+    expect(within(dialog).getByRole('button', { name: 'Keep working' })).toHaveFocus();
+    await user.click(within(dialog).getByRole('button', { name: 'Start over' }));
+    await waitForElementToBeRemoved(dialog);
 
+    await waitFor(() => expect(screen.getByTestId('start-empty')).toBeInTheDocument());
+    expect(screen.queryByTestId('supplier-list')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import', pressed: true })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+    expect(await screen.findByText('Enter the arrival date and time')).toBeInTheDocument();
+  });
+
+  it('runs the main steps from the keyboard', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.keyboard('{Alt>}l{/Alt}');
+    expect(await screen.findByTestId('load-summary')).toBeInTheDocument();
+    await user.type(scanField(), 'S1{Enter}');
+    await user.keyboard('{Alt>}a{/Alt}');
+    expect(screen.getByTestId('selected-totals')).toHaveTextContent('Contracts: 1');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(await screen.findByText('Enter the arrival date and time')).toBeInTheDocument();
+  });
+
+  it('asks before leaving with an unconfirmed selection', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await loadContracts(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Supplier S1' }));
+    await user.click(screen.getByRole('button', { name: 'Add all to selection' }));
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
     expect(
-      screen.queryByText('Supplier List - Pending Arrival Confirmation'),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId('pendingTotals')).toHaveTextContent('0 Contracts');
-    expect(screen.getByRole('combobox', { name: 'Shipment' })).toHaveTextContent('Import');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Enter Confirm Arrival Date')).toBeInTheDocument();
+      await screen.findByRole('dialog', { name: 'Leave without confirming?' }),
+    ).toHaveTextContent('1 selected contract has not been confirmed.');
   });
 });

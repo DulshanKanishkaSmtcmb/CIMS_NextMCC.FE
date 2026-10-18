@@ -3,6 +3,10 @@ import type { PendingArrivals, PendingContract } from '../../services/arrivalsAp
 import {
   addRow,
   buildConfirmRequest,
+  duplicateRcvNos,
+  findPickTarget,
+  firstTickedContainer,
+  lineCounts,
   editContainerNo,
   listsFromLoad,
   removeRow,
@@ -170,5 +174,37 @@ describe('confirm arrival list logic (legacy ConfirmArrival.js)', () => {
   it('sends no container when none is ticked', () => {
     const s = selectAll(toggleSupplier(listsFromLoad(loaded), 0, true));
     expect(buildConfirmRequest(s, '2026-10-18T14:30:00').container).toBeNull();
+  });
+});
+
+describe('confirm arrival helpers for the redesigned page', () => {
+  it('counts the contracts each line would list', () => {
+    const counts = lineCounts(listsFromLoad(loaded));
+    expect([...counts.suppliers.values()]).toEqual([2, 1]);
+    expect([...counts.containers.values()]).toEqual([2, 1]);
+  });
+
+  it('finds the line for a scanned container no, load reference or supplier code, ignoring case', () => {
+    const s = listsFromLoad(loaded);
+    expect(findPickTarget(s, ' mscu1 ')).toMatchObject({ kind: 'container', line: { id: 1 } });
+    expect(findPickTarget(s, 'lr-1')).toMatchObject({ kind: 'container', line: { id: 1 } });
+    expect(findPickTarget(s, 'S2')).toMatchObject({ kind: 'supplier', line: { id: 1 } });
+    // Blank container fields never match a blank or unknown scan.
+    expect(findPickTarget(s, '')).toBeNull();
+    expect(findPickTarget(s, 'NOPE')).toBeNull();
+  });
+
+  it('names the first ticked container, the one the save sends', () => {
+    let s = toggleContainer(listsFromLoad(loaded), 1, true);
+    s = toggleContainer(s, 0, true);
+    expect(firstTickedContainer(s)?.id).toBe(0);
+    expect(buildConfirmRequest(s, '2026-10-18T14:30:00').container?.vesselOrderNo).toBe(0);
+  });
+
+  it('lists the Rcv Nos picked twice', () => {
+    let s = toggleSupplier(listsFromLoad(loaded), 0, true);
+    s = toggleContainer(s, 1, true);
+    expect(duplicateRcvNos(s.pending)).toEqual(['R3']);
+    expect(duplicateRcvNos([])).toEqual([]);
   });
 });

@@ -186,7 +186,7 @@ export function totals(rows: readonly PendingContract[]): Totals {
 
 /** Body of POST api/v1/arrivals/confirm: Selected rows in order and the FIRST ticked container (legacy saved only that one). */
 export function buildConfirmRequest(state: ListsState, arrivalDate: string): ConfirmArrivalRequest {
-  const first = state.containers.find((c) => c.checked);
+  const first = firstTickedContainer(state);
   return {
     arrivalDate,
     rcvNos: state.selected.map((r) => r.rcvNo),
@@ -202,4 +202,61 @@ export function buildConfirmRequest(state: ListsState, arrivalDate: string): Con
         }
       : null,
   };
+}
+
+/** The FIRST ticked container: the only one whose vessel/container details the save sends (legacy Q4, docs/13 1.8). */
+export function firstTickedContainer(state: ListsState): ContainerLine | undefined {
+  return state.containers.find((c) => c.checked);
+}
+
+/** How many loaded contracts ticking each line would list, keyed by line id (shown next to each line). */
+export function lineCounts(state: ListsState): {
+  suppliers: Map<number, number>;
+  containers: Map<number, number>;
+} {
+  return {
+    suppliers: new Map(
+      state.suppliers.map((s) => [
+        s.id,
+        state.loaded.filter((c) => c.shipperCode === s.shipperCode).length,
+      ]),
+    ),
+    containers: new Map(
+      state.containers.map((line) => [
+        line.id,
+        state.loaded.filter((c) => sameContainer(c, line)).length,
+      ]),
+    ),
+  };
+}
+
+export type PickTarget =
+  { kind: 'container'; line: ContainerLine } | { kind: 'supplier'; line: SupplierLine };
+
+/**
+ * Quick pick (scan field): the line whose Container No, Load Reference or Supplier Code equals the scanned or typed
+ * text, ignoring case and surrounding spaces. Containers first. Picking only ticks the line, exactly like a click.
+ */
+export function findPickTarget(state: ListsState, text: string): PickTarget | null {
+  const wanted = text.trim().toUpperCase();
+  if (!wanted) return null;
+  const same = (value: string | null | undefined) =>
+    !!value && value.trim().toUpperCase() === wanted;
+  const container =
+    state.containers.find((c) => same(c.containerNo)) ??
+    state.containers.find((c) => same(c.loadReference));
+  if (container) return { kind: 'container', line: container };
+  const supplier = state.suppliers.find((s) => same(s.shipperCode));
+  return supplier ? { kind: 'supplier', line: supplier } : null;
+}
+
+/** Rcv Nos that appear more than once in the rows (a contract picked by its supplier AND its container, Q5). */
+export function duplicateRcvNos(rows: readonly ListRow[]): string[] {
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const r of rows) {
+    if (seen.has(r.rcvNo)) twice.add(r.rcvNo);
+    seen.add(r.rcvNo);
+  }
+  return [...twice];
 }
