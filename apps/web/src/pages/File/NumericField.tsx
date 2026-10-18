@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { TextInput } from '@cims/ui';
 
 export interface NumericFieldProps {
-  label: string;
+  label?: string;
+  /** Accessible name when there is no visible label (cells of a table). */
+  ariaLabel?: string;
   /** The committed number, or null for an empty field. */
   value: number | null;
   /** Digits after the decimal point; typed values are rounded to this (legacy `ko.extenders.numeric`). */
@@ -20,6 +22,7 @@ const show = (value: number | null) => (value === null ? '' : String(value));
  */
 export function NumericField({
   label,
+  ariaLabel,
   value,
   decimals,
   onCommit,
@@ -51,6 +54,7 @@ export function NumericField({
     <TextInput
       id={id}
       label={label}
+      ariaLabel={ariaLabel}
       value={text}
       readOnly={readOnly}
       onChange={readOnly ? undefined : setText}

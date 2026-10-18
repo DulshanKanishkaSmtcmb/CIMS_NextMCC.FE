@@ -17,6 +17,8 @@ export interface SelectFieldProps {
   required?: boolean;
   error?: boolean;
   helperText?: string;
+  /** Accessible name when there is no visible label (cells of a table). */
+  ariaLabel?: string;
   fullWidth?: boolean;
 }
 
@@ -39,6 +41,7 @@ export function SelectField({
   required,
   error,
   helperText,
+  ariaLabel,
   fullWidth = true,
 }: SelectFieldProps) {
   return (
@@ -55,6 +58,9 @@ export function SelectField({
       error={error}
       helperText={helperText}
       fullWidth={fullWidth}
+      slotProps={
+        ariaLabel ? { select: { SelectDisplayProps: { 'aria-label': ariaLabel } } } : undefined
+      }
     >
       {options.map(toOption).map((option) => (
         <MenuItem key={option.value} value={option.value}>

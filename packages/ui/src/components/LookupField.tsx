@@ -25,6 +25,8 @@ export interface LookupFieldProps {
   searchId?: string;
   /** Accessible name of the search button. Default "Search". */
   searchLabel?: string;
+  /** Accessible name of the input when there is no visible label (cells of a table). */
+  ariaLabel?: string;
   inputRef?: Ref<HTMLInputElement>;
   name?: string;
   disabled?: boolean;
@@ -48,6 +50,7 @@ export function LookupField({
   id,
   searchId,
   searchLabel = 'Search',
+  ariaLabel,
   inputRef,
   name,
   disabled,
@@ -86,7 +89,7 @@ export function LookupField({
       disabled={disabled}
       fullWidth={fullWidth}
       slotProps={{
-        htmlInput: { readOnly },
+        htmlInput: { readOnly, 'aria-label': ariaLabel },
         input: {
           endAdornment: hideSearch ? undefined : (
             <InputAdornment position="end">

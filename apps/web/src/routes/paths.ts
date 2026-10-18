@@ -14,4 +14,5 @@ export const PATHS = {
   productCategory: '/File/ProductCategory',
   supplier: '/File/Supplier',
   pmSupplier: '/File/PmSupplier',
+  rateCardEntry: '/File/RateCardEntry',
 } as const;

@@ -43,6 +43,9 @@ const SupplierPage = lazy(() =>
 const PmSupplierPage = lazy(() =>
   import('../pages/File/PmSupplierPage').then((m) => ({ default: m.PmSupplierPage })),
 );
+const RateCardEntryPage = lazy(() =>
+  import('../pages/File/RateCardEntryPage').then((m) => ({ default: m.RateCardEntryPage })),
+);
 const NotFoundPage = lazy(() =>
   import('../pages/NotFound/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
@@ -73,6 +76,7 @@ export function AppRoutes() {
           <Route path={PATHS.productCategory} element={<ProductCategoryPage />} />
           <Route path={PATHS.supplier} element={<SupplierPage />} />
           <Route path={PATHS.pmSupplier} element={<PmSupplierPage />} />
+          <Route path={PATHS.rateCardEntry} element={<RateCardEntryPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

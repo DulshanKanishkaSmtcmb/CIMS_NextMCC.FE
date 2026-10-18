@@ -112,6 +112,13 @@ export const MENU_STUB: readonly LegacyMenuRow[] = [
     menuController: 'File',
     menuAction: 'ProductCategory',
   }),
+  row({
+    menuId: '100.12',
+    menuName: 'Rate Card',
+    menuParentId: '100',
+    menuController: 'File',
+    menuAction: 'RateCardEntry',
+  }),
   row({ menuId: '3', menuName: 'Reference', menuIsParent: true, menuImageClass: 'reference' }),
   row({
     menuId: '3.1',
