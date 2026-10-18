@@ -2,16 +2,29 @@ import { useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { DMY_DISPLAY_FORMAT, formatIsoDate, parseIsoDate } from './dates';
+import {
+  DMY_DISPLAY_FORMAT,
+  DMY_TIME_DISPLAY_FORMAT,
+  formatIsoDate,
+  formatIsoDateTime,
+  parseIsoDate,
+  parseIsoDateTime,
+} from './dates';
 
 export interface DmyDatePickerProps {
   label?: string;
-  /** ISO date, yyyy-MM-dd, or null when empty. */
+  /** ISO date, yyyy-MM-dd (with withTime: local yyyy-MM-ddTHH:mm:ss), or null when empty. */
   value: string | null;
-  /** Called with an ISO date, or null when the field is cleared or incomplete. */
+  /** Called with an ISO value in the same format, or null when the field is cleared or incomplete. */
   onChange: (value: string | null) => void;
-  /** ISO dates, yyyy-MM-dd. */
+  /**
+   * Also pick hours and minutes: shows dd/MM/yyyy HH:mm (24 h, like the legacy datetimepicker) and exchanges local
+   * yyyy-MM-ddTHH:mm:ss strings with no offset. Default false.
+   */
+  withTime?: boolean;
+  /** ISO dates (date-times with withTime). */
   minDate?: string;
   maxDate?: string;
   id?: string;
@@ -24,11 +37,12 @@ export interface DmyDatePickerProps {
   fullWidth?: boolean;
 }
 
-/** Date field that shows dd/MM/yyyy and exchanges ISO yyyy-MM-dd strings with the form. */
+/** Date (or date-time) field that shows dd/MM/yyyy[ HH:mm] and exchanges ISO strings with the form. */
 export function DmyDatePicker({
   label,
   value,
   onChange,
+  withTime = false,
   minDate,
   maxDate,
   id,
@@ -40,33 +54,43 @@ export function DmyDatePicker({
   helperText,
   fullWidth,
 }: DmyDatePickerProps) {
+  const parse = withTime ? parseIsoDateTime : parseIsoDate;
+  const format = withTime ? formatIsoDateTime : formatIsoDate;
+
   // The picker may hold a half-typed (invalid) date that the form sees as null. Keep that draft
   // until the parent supplies a different value, so typing over an existing date does not blank the field.
-  const [draft, setDraft] = useState<Dayjs | null>(() => parseIsoDate(value));
-  const draftIso = formatIsoDate(draft);
+  const [draft, setDraft] = useState<Dayjs | null>(() => parse(value));
+  const draftIso = format(draft);
   if ((value ?? null) !== draftIso) {
-    setDraft(parseIsoDate(value));
+    setDraft(parse(value));
   }
+
+  const handleChange = (next: Dayjs | null) => {
+    setDraft(next);
+    const iso = format(next);
+    if (iso !== (value ?? null)) onChange(iso);
+  };
+
+  const common = {
+    label,
+    value: draft,
+    onChange: handleChange,
+    minDate: parse(minDate) ?? undefined,
+    maxDate: parse(maxDate) ?? undefined,
+    disabled,
+    readOnly,
+    slotProps: {
+      textField: { id, name, required, error, helperText, fullWidth },
+    },
+  };
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <DatePicker
-        label={label}
-        value={draft}
-        format={DMY_DISPLAY_FORMAT}
-        onChange={(next) => {
-          setDraft(next);
-          const iso = formatIsoDate(next);
-          if (iso !== (value ?? null)) onChange(iso);
-        }}
-        minDate={parseIsoDate(minDate) ?? undefined}
-        maxDate={parseIsoDate(maxDate) ?? undefined}
-        disabled={disabled}
-        readOnly={readOnly}
-        slotProps={{
-          textField: { id, name, required, error, helperText, fullWidth },
-        }}
-      />
+      {withTime ? (
+        <DateTimePicker {...common} format={DMY_TIME_DISPLAY_FORMAT} ampm={false} />
+      ) : (
+        <DatePicker {...common} format={DMY_DISPLAY_FORMAT} />
+      )}
     </LocalizationProvider>
   );
 }

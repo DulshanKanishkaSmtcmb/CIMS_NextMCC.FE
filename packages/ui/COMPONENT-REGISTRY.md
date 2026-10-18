@@ -39,7 +39,8 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 ### Primitives and icons (status: available)
 
 - **Purpose:** The few MUI building blocks pages need, so pages never import MUI.
-- **Exports:** `Alert`, `Box`, `Button`, `CircularProgress`, `Paper`, `Stack`, `Typography` (plain re-exports with their prop types), and `getMenuIcon(key)` which returns an icon element for keys `home`, `folder`, `inventory`, `reference`, `scan`, `page`.
+- **Exports:** `Alert`, `Box`, `Button`, `Checkbox`, `CircularProgress`, `Paper`, `Stack`, `Typography` (plain re-exports with their prop types), and `getMenuIcon(key)` which returns an icon element for keys `home`, `folder`, `inventory`, `reference`, `scan`, `page`.
+- **Checkbox** was added for tick columns inside `InventoryGrid` cells (Confirm Arrivals supplier and container lists). Give it an accessible name with `slotProps={{ input: { 'aria-label': ... } }}`.
 - **Add to the list** only when a page genuinely needs another primitive. Prefer a purpose-built component below.
 
 ---
@@ -112,10 +113,11 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 ### DmyDatePicker (status: available)
 
-- **Purpose:** Date field that shows `dd/MM/yyyy` and exchanges ISO `yyyy-MM-dd` strings with the form.
-- **Wraps:** `@mui/x-date-pickers` `DatePicker` with `AdapterDayjs` (Community).
-- **Key props:** `value: string | null`, `onChange(value: string | null)`, `label`, `minDate?`, `maxDate?` (ISO strings), `disabled`, `readOnly`, `required`, `error`, `helperText`, `fullWidth`, `id`, `name`.
-- **Behaviour:** `onChange` gets `null` when the field is cleared or only partly typed. Helpers: `parseIsoDate`, `formatIsoDate`, `DMY_DISPLAY_FORMAT`, `ISO_DATE_FORMAT`.
+- **Purpose:** Date field that shows `dd/MM/yyyy` and exchanges ISO `yyyy-MM-dd` strings with the form. With `withTime` it is a date-time field (legacy `.datetimepicker`): shows `dd/MM/yyyy HH:mm` (24 h) and exchanges local `yyyy-MM-ddTHH:mm:ss` strings with **no offset** (never `toISOString()`; the API rejects UTC values for wall-clock columns).
+- **Wraps:** `@mui/x-date-pickers` `DatePicker` / `DateTimePicker` with `AdapterDayjs` (Community).
+- **Key props:** `value: string | null`, `onChange(value: string | null)`, `withTime?`, `label`, `minDate?`, `maxDate?` (ISO strings), `disabled`, `readOnly`, `required`, `error`, `helperText`, `fullWidth`, `id`, `name`.
+- **Behaviour:** `onChange` gets `null` when the field is cleared or only partly typed. Helpers: `parseIsoDate`, `formatIsoDate`, `parseIsoDateTime`, `formatIsoDateTime`, `formatDmy(value, withTime?)` (display an API date in a grid cell), `DMY_DISPLAY_FORMAT`, `DMY_TIME_DISPLAY_FORMAT`, `ISO_DATE_FORMAT`, `ISO_DATE_TIME_FORMAT`.
+- **Not ported:** the legacy pickers' red Sundays.
 - **Usage:**
   ```tsx
   <DmyDatePicker
@@ -124,7 +126,23 @@ Entry format: purpose, what it wraps, key props, usage, tests.
     onChange={(v) => setValue('arrivalDate', v)}
   />
   ```
-- **Tests:** `components/DmyDatePicker.test.tsx`.
+- **Tests:** `components/DmyDatePicker.test.tsx`, `components/formFields.test.tsx` (withTime).
+
+### SelectField (status: available)
+
+- **Purpose:** Single-choice drop-down (legacy Knockout `<select data-bind="options: ..., value: ...">`).
+- **Wraps:** `TextField select`, `MenuItem`.
+- **Key props:** `label`, `value: string`, `options` (strings, or `{ value, label }` pairs, shown in order), `onChange(value)`, `inputRef`, `id`, `name`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
+- **Usage:** `<SelectField label="Shipment" value={v} options={['Local', 'Import']} onChange={setV} />` (with react-hook-form: inside a `Controller`).
+- **Tests:** `components/formFields.test.tsx`.
+
+### TextInput (status: available)
+
+- **Purpose:** Plain typed text field, and read-only display boxes (legacy `readonly="readonly"` inputs). Scanner fields use `ScanInput`.
+- **Wraps:** `TextField`.
+- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `readOnly?`, `ariaLabel?` (when there is no visible label), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
+- **Usage:** `<TextInput ariaLabel="Country name" value={countryName} />`
+- **Tests:** `components/formFields.test.tsx`.
 
 ### BlockingOverlay (status: available)
 

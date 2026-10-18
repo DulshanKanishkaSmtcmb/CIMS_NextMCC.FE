@@ -5,6 +5,7 @@
 export { default as Alert, type AlertProps } from '@mui/material/Alert';
 export { default as Box, type BoxProps } from '@mui/material/Box';
 export { default as Button, type ButtonProps } from '@mui/material/Button';
+export { default as Checkbox, type CheckboxProps } from '@mui/material/Checkbox';
 export { default as CircularProgress } from '@mui/material/CircularProgress';
 export { default as Paper, type PaperProps } from '@mui/material/Paper';
 export { default as Stack, type StackProps } from '@mui/material/Stack';

@@ -11,8 +11,9 @@ function manualChunks(id: string): string | undefined {
   const inPackage = (...names: string[]) =>
     names.some((name) => id.includes(`/node_modules/${name}/`));
 
+  // Date pickers (with the date-time picker) and the data grid are split so neither chunk passes 500 kB.
+  if (inPackage('@mui/x-date-pickers', 'dayjs')) return 'mui-x-pickers'; // dayjs: only the pickers use it
   if (id.includes('/node_modules/@mui/x-')) return 'mui-x';
-  if (inPackage('dayjs')) return 'mui-x'; // only used by the MUI X date pickers
   if (inPackage('@toolpad/core', '@toolpad/utils')) return 'toolpad';
   if (
     id.includes('/node_modules/@mui/') ||

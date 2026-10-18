@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import type { User } from 'oidc-client-ts';
+import { getDevToken, sessionFromDevToken } from '../auth/devToken';
 import { sessionFromUser } from '../auth/profile';
 import { userManager } from '../auth/userManager';
 import { useAppDispatch } from '../redux/hooks';
@@ -10,6 +11,14 @@ export function AuthBootstrap({ children }: { children: ReactNode }) {
   const dispatch = useAppDispatch();
 
   useEffect(() => {
+    // Development only: a valid dev token signs in without CIMS Identity (auth/devToken.ts).
+    const devToken = getDevToken();
+    const devSession = devToken ? sessionFromDevToken(devToken) : null;
+    if (devSession) {
+      dispatch(signedIn(devSession));
+      return undefined;
+    }
+
     let cancelled = false;
     const onLoaded = (user: User): void => {
       dispatch(signedIn(sessionFromUser(user)));

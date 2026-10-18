@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Alert, Box, Button, Paper, Stack, Typography } from '@cims/ui';
 import { getErrorMessage } from '@cims/api-client';
+import { devTokenEnabled } from '../../auth/devToken';
 import { userManager } from '../../auth/userManager';
 import { env } from '../../config/env';
 import { useAppSelector } from '../../redux/hooks';
 import { safeReturnTo } from '../../utils/returnTo';
+import { DevTokenForm } from './DevTokenForm';
 
 /** Starts the Identity redirect (authorization code + PKCE). The user types their password at Identity, never here. */
 export function LoginPage() {
@@ -45,6 +47,7 @@ export function LoginPage() {
           <Button variant="contained" size="large" onClick={signIn}>
             Sign in with CIMS Identity
           </Button>
+          {devTokenEnabled ? <DevTokenForm /> : null}
         </Stack>
       </Paper>
     </Box>
