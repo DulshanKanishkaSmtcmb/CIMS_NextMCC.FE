@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * /File/RateCardEntry, /File/OkToLoadReason and the two Pallet Rack Build routes (legacy docs/18): open each page, check
- * the messages and the flow, and save. Needs the SPA (`npm run dev`, with VITE_API_BASE_URL pointing at the API), the API
- * with a Test database, and a DevJwt token for a PwInfo user in E2E_DEV_TOKEN. Skips when any of them is missing.
+ * /File/RateCardEntry, /File/OkToLoadReason and the two Pallet Rack Build routes (legacy docs/18, redesign docs/19
+ * section 14): open each page, check the messages and the flow, and save. Needs the SPA (`npm run dev`, with
+ * VITE_API_BASE_URL or DEV_API_PROXY_TARGET pointing at the API), the API with a Test database, and a DevJwt token in
+ * E2E_DEV_TOKEN or a PwInfo user name in E2E_DEV_USER. Skips when any of them is missing. Selectors: roles, labels and
+ * data-testid.
  *
  * Saves are intercepted and answered locally unless E2E_ALLOW_SAVE=1. With E2E_ALLOW_SAVE=1 the tests really write to the
  * Test database: E2E_DC (default "Aramex Fulfillment Centre", a DC without reasons) receives the reasons "ZZT1 A" (then its detail changed) and "ZZT1 B",
@@ -145,42 +147,50 @@ test.describe('File master pages, wave 1d', () => {
     }
   });
 
-  test('Pallet Rack Build (/Data/PalletRackBuildArr): messages, layout, toggle, existing rack, save', async ({
+  test('Pallet Rack Build (/Data/PalletRackBuildArr): messages, layout, toggle, existing rack, save, stored layout', async ({
     page,
   }) => {
     const posted = interceptSaves(page, '/master-data/pallet-racks', ['POST']);
     await signIn(page);
     await page.goto('/Data/PalletRackBuildArr');
-    await expect(page.getByRole('heading', { name: 'Pallets Rack Build' })).toBeVisible();
-    await expect(page.locator('#RackNo')).toHaveValue('A35');
+    await expect(page.getByRole('heading', { level: 1, name: 'Pallet rack build' })).toBeVisible();
+    // no developer defaults any more (legacy A35 / 39 / 8)
+    await expect(page.getByRole('textbox', { name: 'Rack number' })).toHaveValue('');
 
-    // the rack of the Test database exists: the legacy defaults cannot be saved as a new rack
-    await page.locator('#btnLoadData').click();
-    await expect(page.getByRole('group')).toHaveCount(39 * 8);
-    await expect(page.locator('#TotPltPositions')).toHaveValue('312');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Pallet Rack Already Exist')).toBeVisible();
+    const layoutButton = page.getByTestId('layout-button');
+    const tiles = page.getByTestId('position-tile');
+    const problem = page.getByTestId('save-problem');
 
-    // messages
-    await page.locator('#RackNo').fill('');
-    await page.locator('#RackNo').blur();
-    await page.locator('#btnLoadData').click();
-    await expect(page.getByText('Enter Rack No')).toBeVisible();
-    await setNumber(page, 'No of Rows', '100');
-    await page.locator('#RackNo').fill(rack);
-    await page.locator('#RackNo').blur();
-    await page.locator('#btnLoadData').click();
-    await expect(page.getByText('Nof of Rows must be less than 99')).toBeVisible();
+    // messages, in the legacy order
+    await layoutButton.click();
+    await expect(problem).toContainText('Enter the rack number');
+    await page.getByRole('textbox', { name: 'Rack number' }).fill('A35');
+    await page.getByRole('textbox', { name: 'Rack number' }).blur();
+    await setNumber(page, 'Rows (1–99)', '100');
+    await layoutButton.click();
+    await expect(problem).toContainText('A rack has 1 to 99 rows');
+
+    // the rack of the Test database exists: it cannot be saved as a new rack
+    await setNumber(page, 'Rows (1–99)', '39');
+    await setNumber(page, 'Layers (1–12)', '8');
+    await layoutButton.click();
+    await expect(tiles).toHaveCount(39 * 8);
+    await page.getByRole('button', { name: 'Save rack' }).click();
+    await expect(problem).toContainText('Rack A35 already exists.');
 
     // a new rack: 2 rows x 2 layers, one position switched off, saved with the other three
-    await setNumber(page, 'No of Rows', '2');
-    await setNumber(page, 'No of Layers', '2');
-    await page.locator('#btnLoadData').click();
-    await expect(page.getByRole('group')).toHaveCount(4);
-    await page.getByRole('button', { name: `Disable ${rack}-02-02` }).click();
-    await expect(page.locator('#TotPltPositions')).toHaveValue('3');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Data Saved Successfully')).toBeVisible();
+    await page.getByRole('textbox', { name: 'Rack number' }).fill(rack);
+    await page.getByRole('textbox', { name: 'Rack number' }).blur();
+    await setNumber(page, 'Rows (1–99)', '2');
+    await setNumber(page, 'Layers (1–12)', '2');
+    await layoutButton.click();
+    await expect(tiles).toHaveCount(4);
+    await page.getByRole('button', { name: `${rack}-02-02: in use` }).click();
+    await expect(page.getByTestId('in-use-count')).toHaveText('3 of 4 in use');
+    await page.getByRole('button', { name: 'Save rack' }).click();
+    await expect(page.getByTestId('save-result')).toContainText(
+      `Rack ${rack} saved with 3 positions`,
+    );
     if (!allowSave) {
       expect(posted).toEqual([
         {
@@ -193,23 +203,23 @@ test.describe('File master pages, wave 1d', () => {
       ]);
     }
 
-    // View loads the stored layout of the rack
-    await page.getByRole('combobox', { name: 'Entry Type' }).click();
-    await page.getByRole('option', { name: 'View' }).click();
-    await page.locator('#btnRackNo').click();
-    const dialog = page.getByRole('dialog', { name: 'Pallets Area Listing' });
+    // View stored rack loads the stored layout of a rack picked from the list
+    await page.getByRole('button', { name: 'View stored rack' }).click();
+    await page.getByRole('button', { name: 'Search racks' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Stored racks' });
     await expect(dialog).toBeVisible();
+    await dialog.getByRole('textbox', { name: 'Search Rack', exact: true }).fill('A35');
     await dialog.getByRole('button', { name: 'Select' }).first().click();
-    await expect(page.locator('#RackNo')).toHaveValue('A35');
-    await page.getByRole('button', { name: 'Load Pallet Position Layout' }).click();
-    await expect(page.getByRole('group')).toHaveCount(39 * 8);
-    await expect(page.locator('#TotPltPositions')).toHaveValue('312');
+    await expect(page.getByRole('textbox', { name: 'Rack number' })).toHaveValue('A35');
+    await layoutButton.click();
+    await expect(tiles).toHaveCount(39 * 8);
+    await expect(page.getByTestId('in-use-count')).toHaveText('312 of 312 in use');
   });
 
   test('Pallet Rack Build (/File/PalletRackBuild) is the same page', async ({ page }) => {
     await signIn(page);
     await page.goto('/File/PalletRackBuild');
-    await expect(page.getByRole('heading', { name: 'Pallets Rack Build' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Create Pallet Position Layout' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Pallet rack build' })).toBeVisible();
+    await expect(page.getByTestId('layout-button')).toHaveText('Create layout');
   });
 });

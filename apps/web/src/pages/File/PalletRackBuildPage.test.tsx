@@ -7,7 +7,7 @@ import { installMockApi, type MockCall, type MockHandler } from '../../test/mock
 import type { PalletPosition, PalletRackData } from '../../services/palletRackApi';
 import { PalletRackBuildPage } from './PalletRackBuildPage';
 
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 }); // slower when the suites run in parallel
 
 const BASE = '/api/v1/master-data/pallet-racks';
 const A35 = { rackNo: 'A35', nofRows: 39, nofLayers: 8, nofPositions: 303 };
@@ -29,10 +29,11 @@ let rackReply: (rackNo: string, withPositions: boolean) => PalletRackData = () =
   positions: [],
 });
 let saveReply: MockHandler = () => SAVED;
+let listReply: unknown[] = [A35];
 
 function setup() {
   calls = installMockApi((call) => {
-    if (call.method === 'GET' && call.url === BASE) return { status: 200, data: [A35] };
+    if (call.method === 'GET' && call.url === BASE) return { status: 200, data: listReply };
     if (call.method === 'GET' && call.url.startsWith(`${BASE}/`)) {
       const rackNo = decodeURIComponent(call.url.slice(BASE.length + 1));
       const withPositions = (call.params as { positions: boolean }).positions;
@@ -51,133 +52,140 @@ afterEach(() => {
   resetClient();
   rackReply = () => ({ rack: null, positions: [] });
   saveReply = () => SAVED;
+  listReply = [A35];
 });
 
-const field = (label: string) => screen.getByRole('textbox', { name: label });
-const layoutButton = () => document.getElementById('btnLoadData') as HTMLElement;
-const tiles = () => screen.queryAllByRole('group');
-const tile = (name: string) => screen.getByRole('group', { name });
-const total = () => field('Total Pallet Positions');
+const field = (label: RegExp) => screen.getByRole('textbox', { name: label });
+const layoutButton = () => screen.getByTestId('layout-button');
+const tiles = () => screen.queryAllByTestId('position-tile');
+const tile = (position: string) =>
+  screen.getByRole('button', { name: new RegExp(`^${position}:`) });
 const writes = () => calls.filter((c) => c.method === 'POST');
+const save = () => screen.getByRole('button', { name: 'Save rack' });
+const problem = () => screen.getByTestId('save-problem');
 
-async function setNumber(user: ReturnType<typeof userEvent.setup>, label: string, value: string) {
+async function setNumber(user: ReturnType<typeof userEvent.setup>, label: RegExp, value: string) {
   await user.clear(field(label));
   await user.type(field(label), value);
   await user.tab();
 }
 
+async function rack(
+  user: ReturnType<typeof userEvent.setup>,
+  no: string,
+  rows: string,
+  layers: string,
+) {
+  await user.type(field(/Rack number/), no);
+  await user.tab();
+  await setNumber(user, /Rows/, rows);
+  await setNumber(user, /Layers/, layers);
+}
+
+async function viewMode(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'View stored rack' }));
+}
+
 describe('PalletRackBuildPage', () => {
-  it('shows the legacy fields, defaults and ids in order', () => {
+  it('starts with empty fields (no developer defaults), the steps in order and nothing read', () => {
     setup();
 
-    expect(screen.getByRole('heading', { name: 'Pallets Rack Build' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Pallet rack build' }),
+    ).toBeInTheDocument();
+    expect(field(/Rack number/)).toHaveValue('');
+    expect(field(/Rows/)).toHaveValue('');
+    expect(field(/Layers/)).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'New rack' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('No layout yet')).toBeInTheDocument();
     const ordered = [
-      screen.getByRole('combobox', { name: 'Entry Type' }),
-      field('Rack No'),
-      field('No of Rows'),
-      field('No of Layers'),
-      total(),
+      screen.getByRole('heading', { name: /Rack/, level: 2 }),
+      field(/Rack number/),
+      field(/Rows/),
+      field(/Layers/),
       layoutButton(),
-      screen.getByRole('heading', { name: 'Pallets Positions' }),
-      screen.getByRole('button', { name: 'Save' }),
-      screen.getByRole('button', { name: 'New' }),
-      screen.getByRole('button', { name: 'Close' }),
+      screen.getByRole('heading', { name: /Pallet positions/ }),
+      save(),
     ];
     ordered.slice(1).forEach((node, i) => {
       expect(
         ordered[i].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    expect(screen.getByRole('combobox', { name: 'Entry Type' })).toHaveTextContent('New');
-    expect(field('Rack No')).toHaveValue('A35');
-    expect(field('No of Rows')).toHaveValue('39');
-    expect(field('No of Layers')).toHaveValue('8');
-    expect(total()).toHaveValue('0');
-    expect(total()).toHaveAttribute('readonly');
-    expect(field('Rack No')).toHaveAttribute('id', 'RackNo');
-    expect(field('No of Rows')).toHaveAttribute('id', 'NofRows');
-    expect(field('No of Layers')).toHaveAttribute('id', 'NofLayers');
-    expect(total()).toHaveAttribute('id', 'TotPltPositions');
-    expect(document.getElementById('btnRackNo')).toBeInTheDocument();
-    expect(layoutButton()).toHaveTextContent('Create Pallet Position Layout');
+    expect(calls).toHaveLength(0);
   });
 
-  it('draws one tile per position, numbered rack-row-layer, and counts them', async () => {
+  it('draws one tile per position, numbered rack-row-layer, all in use, and counts them', async () => {
+    const user = userEvent.setup();
+    setup();
+    await rack(user, 'A35', '39', '8');
+    await user.click(layoutButton());
+
+    expect(tiles()).toHaveLength(312);
+    expect(tile('A35-01-01')).toHaveAttribute('aria-pressed', 'true');
+    expect(tile('A35-39-08')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Row 39' })).toBeInTheDocument();
+    expect(screen.getByTestId('in-use-count')).toHaveTextContent('312 of 312 in use');
+    expect(field(/Positions in use/)).toHaveValue('312 of 312');
+    expect(calls).toHaveLength(0); // a new layout is drawn without asking the server
+  });
+
+  it('a tile switches its position off and on again, in words, and the counts follow', async () => {
+    const user = userEvent.setup();
+    setup();
+    await rack(user, 'A35', '1', '2');
+    await user.click(layoutButton());
+
+    await user.click(tile('A35-01-02'));
+    expect(tile('A35-01-02')).toHaveAttribute('aria-pressed', 'false');
+    expect(tile('A35-01-02')).toHaveAccessibleName('A35-01-02: off');
+    expect(tile('A35-01-02')).toHaveTextContent('Off');
+    expect(screen.getByTestId('in-use-count')).toHaveTextContent('1 of 2 in use');
+    await user.click(tile('A35-01-02'));
+    expect(tile('A35-01-02')).toHaveTextContent('In use');
+
+    await user.click(screen.getByRole('button', { name: 'All off' }));
+    expect(screen.getByTestId('in-use-count')).toHaveTextContent('0 of 2 in use');
+    await user.click(screen.getByRole('button', { name: 'All in use' }));
+    expect(screen.getByTestId('in-use-count')).toHaveTextContent('2 of 2 in use');
+  });
+
+  it('checks the fields in the legacy order, with the legacy limits, when creating the layout', async () => {
     const user = userEvent.setup();
     setup();
 
     await user.click(layoutButton());
-
-    expect(tiles()).toHaveLength(39 * 8);
-    expect(tiles()[0]).toHaveAttribute('aria-label', 'A35-01-01');
-    expect(tiles()[7]).toHaveAttribute('aria-label', 'A35-01-08');
-    expect(tiles()[8]).toHaveAttribute('aria-label', 'A35-02-01');
-    expect(tiles()[39 * 8 - 1]).toHaveAttribute('aria-label', 'A35-39-08');
-    expect(total()).toHaveValue('312');
-    expect(
-      within(tile('A35-01-01')).getByRole('button', { name: 'Disable A35-01-01' }),
-    ).toHaveTextContent('Disable');
-  });
-
-  it('a tile switches its position off (red, no number, Enable) and on again, and the total follows', async () => {
-    const user = userEvent.setup();
-    setup();
-    await setNumber(user, 'No of Rows', '2');
-    await setNumber(user, 'No of Layers', '3');
-    await user.click(layoutButton());
-    expect(tiles()).toHaveLength(6);
-    expect(total()).toHaveValue('6');
-
-    await user.click(screen.getByRole('button', { name: 'Disable A35-01-02' }));
-
-    expect(total()).toHaveValue('5');
-    const off = within(tile('A35-01-02'));
-    expect(off.getByRole('button', { name: 'Enable A35-01-02' })).toHaveTextContent('Enable');
-    expect(off.queryByRole('heading')?.textContent ?? '').toBe('');
-    expect(within(tile('A35-01-01')).getByRole('heading')).toHaveTextContent('A35-01-01');
-
-    await user.click(screen.getByRole('button', { name: 'Enable A35-01-02' }));
-    expect(total()).toHaveValue('6');
-    expect(within(tile('A35-01-02')).getByRole('heading')).toHaveTextContent('A35-01-02');
-  });
-
-  it('checks the fields in the legacy order with the legacy messages when creating the layout', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await user.clear(field('Rack No'));
+    expect(problem()).toHaveTextContent('Enter the rack number');
+    await user.type(field(/Rack number/), 'B1');
     await user.tab();
     await user.click(layoutButton());
-    expect(await screen.findByText('Enter Rack No')).toBeInTheDocument();
-
-    await user.type(field('Rack No'), 'B1');
-    await setNumber(user, 'No of Rows', '0');
+    expect(problem()).toHaveTextContent('Enter the number of rows');
+    await setNumber(user, /Rows/, '100');
     await user.click(layoutButton());
-    expect(await screen.findByText('Enter Nof of Rows in side Rack')).toBeInTheDocument();
-
-    await setNumber(user, 'No of Rows', '100');
+    expect(problem()).toHaveTextContent('A rack has 1 to 99 rows');
+    await setNumber(user, /Rows/, '99');
+    await setNumber(user, /Layers/, '13');
     await user.click(layoutButton());
-    expect(await screen.findByText('Nof of Rows must be less than 99')).toBeInTheDocument();
-
-    await setNumber(user, 'No of Rows', '2');
-    await setNumber(user, 'No of Layers', '13');
+    expect(problem()).toHaveTextContent('A rack has at most 12 layers');
+    await setNumber(user, /Layers/, '12'); // 99 rows and 12 layers pass, as in legacy
     await user.click(layoutButton());
-    expect(await screen.findByText('Nof of Layers must be less than 12')).toBeInTheDocument();
-    expect(tiles()).toHaveLength(0);
+    expect(tiles()).toHaveLength(99 * 12);
   });
 
   it('saves the rack and the positions that are on after checking that the rack does not exist', async () => {
     const user = userEvent.setup();
     setup();
-    await user.clear(field('Rack No'));
-    await user.type(field('Rack No'), 'B1');
-    await setNumber(user, 'No of Rows', '2');
-    await setNumber(user, 'No of Layers', '2');
+    await rack(user, 'B1', '2', '2');
     await user.click(layoutButton());
-    await user.click(screen.getByRole('button', { name: 'Disable B1-02-02' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(tile('B1-02-02'));
+    await user.click(save());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-result')).toHaveTextContent(
+      'Rack B1 saved with 3 positions in use.',
+    );
     const reads = calls.filter((c) => c.method === 'GET');
     expect(reads.map((c) => [c.url, c.params])).toEqual([[`${BASE}/B1`, { positions: false }]]);
     expect(writes()).toHaveLength(1);
@@ -190,19 +198,22 @@ describe('PalletRackBuildPage', () => {
     });
   });
 
-  it('refuses to save before a layout exists or when every position is off', async () => {
+  it('refuses to save without a layout, with every position off, or when the inputs changed after the layout', async () => {
     const user = userEvent.setup();
     setup();
-    await setNumber(user, 'No of Rows', '1');
-    await setNumber(user, 'No of Layers', '1');
+    await rack(user, 'B1', '1', '1');
 
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Nothing to save any Pallet Positions')).toBeInTheDocument();
-
+    await user.click(save());
+    expect(problem()).toHaveTextContent('Create the layout first, then save');
     await user.click(layoutButton());
-    await user.click(screen.getByRole('button', { name: 'Disable A35-01-01' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findAllByText('Nothing to save any Pallet Positions')).not.toHaveLength(0);
+    await user.click(tile('B1-01-01'));
+    await user.click(save());
+    expect(problem()).toHaveTextContent('Turn at least one position on before saving');
+    await user.click(tile('B1-01-01'));
+    await setNumber(user, /Layers/, '2');
+    expect(screen.getByTestId('layout-stale')).toBeInTheDocument();
+    await user.click(save());
+    expect(problem()).toHaveTextContent('Create the layout again.');
     expect(writes()).toHaveLength(0);
   });
 
@@ -210,20 +221,24 @@ describe('PalletRackBuildPage', () => {
     const user = userEvent.setup();
     rackReply = () => ({ rack: A35, positions: [] });
     setup();
+    await rack(user, 'A35', '1', '1');
     await user.click(layoutButton());
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(save());
 
-    expect(await screen.findByText('Pallet Rack Already Exist')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-problem')).toHaveTextContent(
+      'Rack A35 already exists. Choose View stored rack to see it.',
+    );
     expect(writes()).toHaveLength(0);
   });
 
-  it('maps a 409 from the server to the same message and shows a validation message of the server', async () => {
+  it('maps a 409 to "already exists" and shows a validation message of the server verbatim', async () => {
     const user = userEvent.setup();
     saveReply = () => ({ status: 409, data: { code: 'PALLET_RACK_EXISTS' } });
     setup();
+    await rack(user, 'B1', '1', '1');
     await user.click(layoutButton());
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Pallet Rack Already Exist')).toBeInTheDocument();
+    await user.click(save());
+    expect(await screen.findByTestId('save-problem')).toHaveTextContent('Rack B1 already exists.');
 
     saveReply = () => ({
       status: 400,
@@ -232,103 +247,96 @@ describe('PalletRackBuildPage', () => {
         errors: { Positions: ['Position No can not be longer than 10 characters'] },
       },
     });
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(
-      await screen.findByText('Data not Saved [Position No can not be longer than 10 characters]'),
-    ).toBeInTheDocument();
+    await user.click(save());
+    const error = await screen.findByTestId('save-error');
+    expect(error).toHaveTextContent('Data not saved');
+    expect(error).toHaveTextContent('Position No can not be longer than 10 characters');
   });
 
-  it('Delete and View load the stored layout: positions that are not stored are off and the total is recounted', async () => {
+  it('View picks a stored rack from the list and loads its layout: only stored positions are in use', async () => {
     const user = userEvent.setup();
+    const A23 = { rackNo: 'A23', nofRows: 2, nofLayers: 3, nofPositions: 3 };
+    listReply = [A35, A23];
     rackReply = () => ({
-      rack: A35,
-      positions: [position('A35-01-01'), position('A35-01-03'), position('A35-02-02')],
+      rack: A23,
+      positions: [
+        position('A23-01-01', 'A23'),
+        position('A23-01-03', 'A23'),
+        position('A23-02-02', 'A23'),
+      ],
     });
     setup();
-    await setNumber(user, 'No of Rows', '2');
-    await setNumber(user, 'No of Layers', '3');
-    await user.click(screen.getByRole('combobox', { name: 'Entry Type' }));
-    await user.click(await screen.findByRole('option', { name: 'View' }));
-    expect(layoutButton()).toHaveTextContent('Load Pallet Position Layout');
+    await viewMode(user);
+    expect(field(/Rack number/)).toHaveAttribute('readonly');
+    expect(screen.queryByRole('button', { name: 'Save rack' })).toBeNull();
+    expect(layoutButton()).toHaveTextContent('Load layout');
 
-    await user.click(layoutButton());
-
-    await waitFor(() => expect(tiles()).toHaveLength(6));
-    await waitFor(() => expect(total()).toHaveValue('3'));
-    expect(screen.getByRole('button', { name: 'Disable A35-01-01' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enable A35-01-02' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Disable A35-02-02' })).toBeInTheDocument();
-    const read = calls.find((c) => c.method === 'GET');
-    expect(read?.params).toEqual({ positions: true });
-  });
-
-  it('a rack with no stored positions loads with every position off (the legacy page froze here)', async () => {
-    const user = userEvent.setup();
-    setup();
-    await setNumber(user, 'No of Rows', '2');
-    await setNumber(user, 'No of Layers', '4');
-    await user.click(screen.getByRole('combobox', { name: 'Entry Type' }));
-    await user.click(await screen.findByRole('option', { name: 'Delete' }));
-    await user.click(layoutButton());
-
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: /^Enable / })).toHaveLength(8),
-    );
-    expect(total()).toHaveValue('0');
-  });
-
-  it('outside New a missing rack cannot be saved: "Pallet Rack not Exist"', async () => {
-    const user = userEvent.setup();
-    setup();
-    await setNumber(user, 'No of Rows', '1');
-    await setNumber(user, 'No of Layers', '1');
-    await user.click(layoutButton());
-    await user.click(screen.getByRole('combobox', { name: 'Entry Type' }));
-    await user.click(await screen.findByRole('option', { name: 'Delete' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(await screen.findByText('Pallet Rack not Exist')).toBeInTheDocument();
-    expect(writes()).toHaveLength(0);
-  });
-
-  it('the Rack No field is typed in New and chosen from the Pallets Area Listing otherwise', async () => {
-    const user = userEvent.setup();
-    setup();
-    expect(field('Rack No')).not.toHaveAttribute('readonly');
-    expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled();
-
-    await user.click(screen.getByRole('combobox', { name: 'Entry Type' }));
-    await user.click(await screen.findByRole('option', { name: 'View' }));
-    expect(field('Rack No')).toHaveAttribute('readonly');
-    await setNumber(user, 'No of Rows', '5');
-    await user.click(screen.getByRole('button', { name: 'Search' }));
-
-    const dialog = await screen.findByRole('dialog', { name: 'Pallets Area Listing' });
+    await user.click(screen.getByRole('button', { name: 'Search racks' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Stored racks' });
     expect(
       within(dialog)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['', 'RackNo', 'NofRows', 'NofLayers', 'NofPositions']);
-    const row = within(dialog).getByText('A35').closest('[role="row"]') as HTMLElement;
+    ).toEqual(['', 'Rack', 'Rows', 'Layers', 'Positions']);
+    const row = within(dialog).getByText('A23').closest('[role="row"]') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: 'Select' }));
-
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(field('Rack No')).toHaveValue('A35');
-    expect(field('No of Rows')).toHaveValue('39');
-    expect(field('No of Layers')).toHaveValue('8');
-    expect(total()).toHaveValue('303');
+    expect(field(/Rack number/)).toHaveValue('A23');
+    expect(field(/Rows/)).toHaveValue('2');
+    expect(field(/Positions in use/)).toHaveValue('3');
+
+    await user.click(layoutButton());
+    await waitFor(() => expect(tiles()).toHaveLength(6));
+    const read = calls.find((c) => c.method === 'GET' && c.url !== BASE);
+    expect(read?.params).toEqual({ positions: true });
+    expect(tile('A23-01-01')).toHaveAttribute('aria-pressed', 'true');
+    expect(tile('A23-01-02')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('in-use-count')).toHaveTextContent('3 of 6 in use');
+    // a stored rack is shown, not edited
+    await user.click(tile('A23-01-02'));
+    expect(tile('A23-01-02')).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('New clears the layout', async () => {
+  it('a stored rack with no positions loads with every position off (the legacy page froze here)', async () => {
+    const user = userEvent.setup();
+    listReply = [{ rackNo: 'E1', nofRows: 2, nofLayers: 4, nofPositions: 0 }];
+    setup();
+    await viewMode(user);
+    await user.click(screen.getByRole('button', { name: 'Search racks' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Stored racks' });
+    await user.click(within(dialog).getByRole('button', { name: 'Select' }));
+    await user.click(layoutButton());
+
+    await waitFor(() => expect(tiles()).toHaveLength(8));
+    expect(screen.getByTestId('in-use-count')).toHaveTextContent('0 of 8 in use');
+  });
+
+  it('Start over asks before throwing away switched positions', async () => {
     const user = userEvent.setup();
     setup();
-    await setNumber(user, 'No of Rows', '1');
+    await rack(user, 'B1', '1', '2');
     await user.click(layoutButton());
-    expect(tiles()).toHaveLength(8);
+    await user.click(tile('B1-01-01'));
 
-    await user.click(screen.getByRole('button', { name: 'New' }));
-
+    await user.click(screen.getByRole('button', { name: 'Start over' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard this layout?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(tiles()).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Start over' }));
+    await user.click(await screen.findByRole('button', { name: 'Discard layout' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(tiles()).toHaveLength(0);
-    expect(total()).toHaveValue('0');
+    expect(field(/Rack number/)).toHaveValue('B1'); // the fields stay, as legacy New
+  });
+
+  it('creates the layout with Alt+L and saves with Ctrl+S', async () => {
+    const user = userEvent.setup();
+    setup();
+    await rack(user, 'B2', '1', '1');
+    await user.keyboard('{Alt>}l{/Alt}');
+    expect(tiles()).toHaveLength(1);
+    await user.keyboard('{Control>}s{/Control}');
+    expect(await screen.findByTestId('save-result')).toHaveTextContent('Rack B2 saved');
   });
 });

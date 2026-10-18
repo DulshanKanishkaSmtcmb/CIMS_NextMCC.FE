@@ -53,8 +53,10 @@ export function StatGroup({ items, size = 'small', label, 'data-testid': testId 
               component="span"
               sx={{
                 position: 'absolute',
-                width: 1,
-                height: 1,
+                // 1px, not 1: in sx a width of 1 means 100%, which stuck out of the page
+                width: '1px',
+                height: '1px',
+                margin: '-1px',
                 overflow: 'hidden',
                 clip: 'rect(0 0 0 0)',
               }}

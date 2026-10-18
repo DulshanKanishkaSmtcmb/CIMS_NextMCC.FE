@@ -104,9 +104,13 @@ export function FormSection({
       sx={{
         minWidth: 0,
         '& .visually-hidden': {
+          // 1px, not 1: in sx a width of 1 means 100%, which stuck out of the page
           position: 'absolute',
-          width: 1,
-          height: 1,
+          width: '1px',
+          height: '1px',
+          margin: '-1px',
+          padding: 0,
+          border: 0,
           overflow: 'hidden',
           clip: 'rect(0 0 0 0)',
           whiteSpace: 'nowrap',
