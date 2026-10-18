@@ -31,7 +31,9 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 ### theme.ts: cimsTheme, cimsTokens (status: available)
 
 - **Purpose:** Light theme with dense defaults for scanner stations, and the token table behind it.
-- **Tokens:** `cimsTokens.palette`, `.typography` (13 px base), `.radius`, `.spacing`, `.scanner` (`inputFontSize`, `inputMinHeight`). Read scanner sizing in `sx` as `theme.cims.scanner.*`.
+- **Tokens:** `cimsTokens.palette` (with `textPrimary`, `textSecondary`, `divider`), `.status` (success/warning/error/info/neutral, each `main`/`fg`/`bg`, AA contrast), `.typography` (14 px base since 2026-10-18, was 13), `.radius` (6), `.spacing`, `.scanner` (`inputFontSize`, `inputMinHeight`), `.focusRing`, `.layout` (page paddings, content max width, aside widths), `.density` (`touchTarget` 44 px). Read them in `sx` as `theme.cims.*`.
+- **Type scale:** `h1` page title (1.5 rem/600), `h2` section (1.125 rem/600), `h3` group (1 rem/600); buttons sentence case (`textTransform: none`).
+- **Global:** visible focus ring on every ButtonBase (`.Mui-focusVisible`), soft focus halo on outlined inputs, `prefers-reduced-motion` honoured, `<kbd>` styling for shortcut legends. Rationale: legacy workspace `docs/19-ux-design-principles.md` section 8.
 - **Defaults set once:** TextField, Select, FormControl, Button, IconButton, Table are `small`; DataGrid is `compact`; Paper is `outlined`.
 - **Changing a token** changes every screen. Treat it as a design decision, not a tweak.
 - **Tests:** `components/layout.test.tsx`.
@@ -231,9 +233,90 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 Add these when a migrated page needs them. Build them here, not in the page.
 
-| Component              | Purpose                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| AppShell               | Layout with navigation, header and content area (the app currently uses Toolpad `DashboardLayout` directly). |
-| FormSection            | Titled group of form fields with consistent spacing.                                                         |
-| EmptyState, ErrorState | Standard views for data screens (the grid has its own empty state).                                          |
-| StatusChip             | Canonical rendering of entity status.                                                                        |
+| Component | Purpose                                                                                                      |
+| --------- | ------------------------------------------------------------------------------------------------------------ |
+| AppShell  | Layout with navigation, header and content area (the app currently uses Toolpad `DashboardLayout` directly). |
+
+---
+
+## UX foundation: page templates, states, form layout, shortcuts (2026-10-18)
+
+The design rules behind these are in the legacy workspace `docs/19-ux-design-principles.md` (page anatomy, page types, forms, feedback, tables, tokens, accessibility, wording, review checklist). Every page uses `PageShell` directly or through a template. Showcase: `apps/web/src/pages/Data/ConfirmArrivalPage.tsx` (OperationalPage).
+
+### PageShell (status: available)
+
+- **Purpose:** The one page frame: context line, the page's single h1 with an optional status, secondary + primary actions on the right, an optional toolbar line (shortcuts legend), content with the token paddings and max width, optional sticky footer.
+- **Wraps:** `Box`, `Stack`, `Typography`.
+- **Key props:** `title`, `context?`, `status?`, `primaryAction?`, `secondaryActions?`, `toolbar?`, `footer?` (an `ActionBar`), `width?` (`content` default, `full` for wide grids), `children`.
+- **Usage:** `<PageShell title="Countries" context="File · Master data" primaryAction={<Button variant="contained">New country</Button>}>…</PageShell>`
+- **Tests:** `templates/templates.test.tsx`.
+
+### ActionBar (status: available)
+
+- **Purpose:** Sticky bottom bar of a task page: the input the commit needs (e.g. a date) and a summary on the left, the actions on the right (primary last), an optional message row (ErrorState, success hint). Buttons get the 44 px touch target.
+- **Wraps:** `Box` (`position: sticky; bottom: 0` inside the scrolling main area), `Stack`.
+- **Key props:** `start?`, `children` (actions), `message?`, `label?` (region name, default "Page actions").
+- **Tests:** `templates/templates.test.tsx`.
+
+### OperationalPage (status: available)
+
+- **Purpose:** Template for scan/task pages: scan area on top, results with a context/progress aside, sticky action bar. Below `md` the aside stacks above the results.
+- **Wraps:** `PageShell`, CSS grid.
+- **Key props:** all `PageShell` props except `footer`/`width`, plus `scanArea?`, `aside?`, `asideLabel?`, `asidePosition?` (`end` default, `start`), `asideWidth?` (`narrow` 320 / `wide` 420 px tokens), `actionBar?`, `children` (results).
+- **Usage:** see `ConfirmArrivalPage.tsx` (step 1 filters as `scanArea`, step 2 pick list as `aside`, step 3 lists as `children`, date + totals + Confirm in the `ActionBar`).
+- **Tests:** `templates/templates.test.tsx`.
+
+### MasterDataPage (status: available, no page uses it yet)
+
+- **Purpose:** Template for master-data pages: searchable list + detail panel (drawer below `md`) with `idle`/`view`/`edit`/`new` modes, a dirty-state guard (ConfirmDialog "Discard unsaved changes?" with focus on "Keep editing", plus the browser's `beforeunload` prompt), Cancel/Save conventions, a mode chip, and keyboard shortcuts with a legend (`/` search, Alt+N new, Alt+E edit, Ctrl+S save, Esc cancel).
+- **Wraps:** `PageShell`, `TextField` (search), `List`/`ListItemButton`, `Drawer`, `ConfirmDialog`, `EmptyState`, `ErrorState`, `ListSkeleton`/`FormSkeleton`, `StatusChip`, `ShortcutsLegend`, `useMediaQuery`.
+- **Key props:** `title` (plural), `entityName` (singular, lower case), `items`, `getItemId`, `renderItem → { primary, secondary?, meta? }`, `getSearchText` (every search word must occur), `search?`/`onSearchChange?`, `listLoading?`, `listError?`, `onRetryList?`, `selectedId`, `onSelect`, `mode`, `onNew?`, `onEdit?`, `onCancel`, `onSave`, `saving?`, `dirty?`, `detailTitle?`, `detailLoading?`, `detailMessage?` (ValidationSummary / ErrorState), `detailLayout?` (`auto` | `panel` | `drawer`), `secondaryActions?`, `children` (the form; the page makes fields read-only in `view`).
+- **Notes:** the template never validates or saves; the page does, and reports through `detailMessage` and the fields. Enter never saves (scanners send Enter); Ctrl+S does. Migration steps: `docs/19` section 14.
+- **Tests:** `templates/templates.test.tsx` (search, empty search, open, view/edit, guard, shortcuts, `/`, load failure, skeleton, drawer).
+
+### FormSection, FieldGrid, FieldGridItem (status: available)
+
+- **Purpose:** `FormSection` is a titled, labelled `<section>` (optional step number badge, description, status, right-side actions; `card` or `plain`). `FieldGrid` lays fields out in equal responsive columns (default `{ xs: 1, sm: 2, md: 3 }`) so DOM order = reading order = tab order; `FieldGridItem span={n|'full'}` widens one cell. Replaces the planned FormSection, and the web app's local `SectionBox` for new work.
+- **Key props:** FormSection `title`, `description?`, `step?`, `actions?`, `status?`, `variant?`, `headingLevel?` (2 default, 3), `id?`; FieldGrid `columns?`, `gap?`, `alignItems?`.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### StatusChip (status: available)
+
+- **Purpose:** Canonical status rendering: icon + word in the tone's tinted colours (`theme.cims.status`), never colour alone.
+- **Key props:** `tone` (`success` | `warning` | `error` | `info` | `neutral`), `label`, `icon?`, `size?`.
+- **Usage:** `<StatusChip tone="warning" label="Unsaved changes" />`
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### EmptyState, ErrorState (status: available)
+
+- **Purpose:** `EmptyState` says what is empty and what to do next (title, description, one action; `compact` for panels). `ErrorState` is a blocking failure: `role="alert"`, title, what happened to the user's work, the server's own text as `details` (verbatim), `onRetry`, extra `actions`, `onClose`.
+- **Usage:** `<ErrorState title="Data not saved" message="Nothing was changed." details={serverMessage} onRetry={save} />`
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### TableSkeleton, ListSkeleton, FormSkeleton (status: available)
+
+- **Purpose:** Loading placeholders shaped like what is coming (grid, list of lines, form); announced once as `role="status"` with `label`, shapes hidden from screen readers. Use them instead of spinners and blocking overlays for reads.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### InlineHint, ValidationSummary (status: available)
+
+- **Purpose:** The inline validation and guidance convention. `InlineHint` is one icon + text line in a tone (`info`, `success`, `warning`, `error`; `boxed` variant); errors are announced (`role="alert"`), `live` announces other tones, static guidance is silent. Give it an `id` for `aria-describedby`. `ValidationSummary` lists the problems that stopped a save, takes focus when it appears, and each item is a link-button that focuses its field.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### SegmentedControl (status: available)
+
+- **Purpose:** One choice among two to five, all visible (ToggleButtonGroup, exclusive, cannot be cleared), visible label as the group name, 40 px+ buttons. Confirm Arrivals' Shipment Local / Import. More than five choices: `SelectField`.
+- **Key props:** `label`, `value`, `options` (as `SelectField`), `onChange`, `disabled?`, `fullWidth?`.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### StatGroup, formatNumber (status: available)
+
+- **Purpose:** `StatGroup` shows key figures as a `<dl>` (`small` inline for table footers, `large` stacked for action bars); the text reads "Label: value". `formatNumber(value, decimals, { fixed? })` is the shared number formatter (en-GB separators, at most `decimals`, no trailing zeros unless `fixed`); rounding stays with the page.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### useKeyboardShortcuts, ShortcutsLegend (status: available)
+
+- **Purpose:** Page shortcuts on `window` with a visible legend. Keys like `ctrl+s`, `ctrl+enter`, `alt+l` (letters also match by physical key), `escape`, `/`; `mod` = Ctrl/Cmd. Plain keys never fire while typing in a field (combinations do); plain keys skip events a component already handled (ScanInput's Enter); plain Escape is left to open dialogs and menus. `enabled: false` keeps the entry in the legend, dimmed. Helpers `matchesShortcut`, `formatShortcut`.
+- **Usage:** `const shortcuts = [{ keys: 'ctrl+enter', description: 'Confirm arrival', handler: save }]; useKeyboardShortcuts(shortcuts); <ShortcutsLegend shortcuts={shortcuts} />`
+- **Notes:** do not bind keys the browser or Windows owns (Ctrl+W/T/N/L/P, Alt+F4, F5). The reserved CIMS set is in docs/19 section 5.4.
+- **Tests:** `components/uxFoundation.test.tsx`, `templates/templates.test.tsx`.

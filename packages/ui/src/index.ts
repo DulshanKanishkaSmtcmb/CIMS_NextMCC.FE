@@ -35,3 +35,50 @@ export { TenantSwitcher, type Tenant, type TenantSwitcherProps } from './compone
 
 export { getMenuIcon, type MenuIconKey } from './icons';
 export * from './primitives';
+
+// UX foundation (docs/19-ux-design-principles.md): page templates, states, form layout, shortcuts.
+export type { CimsStatusTone, CimsStatusColour } from './theme';
+export { PageShell, type PageShellProps } from './templates/PageShell';
+export { ActionBar, type ActionBarProps } from './templates/ActionBar';
+export { OperationalPage, type OperationalPageProps } from './templates/OperationalPage';
+export {
+  MasterDataPage,
+  type MasterDataPageProps,
+  type MasterDataMode,
+  type MasterDataListItem,
+} from './templates/MasterDataPage';
+export { FormSection, type FormSectionProps } from './components/FormSection';
+export {
+  FieldGrid,
+  FieldGridItem,
+  type FieldGridProps,
+  type FieldGridItemProps,
+  type FieldGridColumns,
+} from './components/FieldGrid';
+export { StatusChip, type StatusChipProps, type StatusTone } from './components/StatusChip';
+export { EmptyState, type EmptyStateProps } from './components/EmptyState';
+export { ErrorState, type ErrorStateProps } from './components/ErrorState';
+export {
+  TableSkeleton,
+  ListSkeleton,
+  FormSkeleton,
+  type TableSkeletonProps,
+  type ListSkeletonProps,
+  type FormSkeletonProps,
+} from './components/SkeletonPresets';
+export { InlineHint, type InlineHintProps, type InlineHintTone } from './components/InlineHint';
+export {
+  ValidationSummary,
+  type ValidationSummaryProps,
+  type ValidationIssue,
+} from './components/ValidationSummary';
+export { SegmentedControl, type SegmentedControlProps } from './components/SegmentedControl';
+export { StatGroup, type StatGroupProps, type StatItem } from './components/StatGroup';
+export { formatNumber, NUMBER_LOCALE } from './components/format';
+export {
+  useKeyboardShortcuts,
+  matchesShortcut,
+  formatShortcut,
+  type KeyboardShortcut,
+} from './components/useKeyboardShortcuts';
+export { ShortcutsLegend, type ShortcutsLegendProps } from './components/ShortcutsLegend';
