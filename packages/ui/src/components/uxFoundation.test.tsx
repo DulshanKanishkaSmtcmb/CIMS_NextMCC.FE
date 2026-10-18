@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { CimsThemeProvider } from '../CimsThemeProvider';
 import { cimsTheme } from '../theme';
+import { CheckboxField } from './CheckboxField';
 import { EmptyState } from './EmptyState';
 import { ErrorState } from './ErrorState';
 import { FieldGrid, FieldGridItem } from './FieldGrid';
@@ -181,6 +182,30 @@ describe('SegmentedControl', () => {
     expect(onChange).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Import' }));
     expect(onChange).toHaveBeenCalledWith('Import');
+  });
+});
+
+describe('CheckboxField', () => {
+  it('toggles from its label and is described by its helper text', async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [checked, setChecked] = useState(false);
+      return (
+        <CimsThemeProvider>
+          <CheckboxField
+            label="Divertable"
+            helperText="Cargo for this port may be diverted."
+            checked={checked}
+            onChange={setChecked}
+          />
+        </CimsThemeProvider>
+      );
+    }
+    render(<Harness />);
+    const box = screen.getByRole('checkbox', { name: 'Divertable' });
+    expect(box).toHaveAccessibleDescription('Cargo for this port may be diverted.');
+    await user.click(screen.getByText('Divertable'));
+    expect(box).toBeChecked();
   });
 });
 

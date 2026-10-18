@@ -53,6 +53,16 @@ async function chooseOption(page: Page, option: string) {
   await page.getByRole('option', { name: option }).click();
 }
 
+/** The country lookup inside a form: search button, filter the code column, select the first row. */
+async function pickCountry(page: Page, code: string) {
+  await page.getByRole('button', { name: 'Search countries' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Countries' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('textbox', { name: 'Search Country code', exact: true }).fill(code);
+  await dialog.getByRole('button', { name: 'Select' }).first().click();
+  await expect(dialog).toBeHidden();
+}
+
 /** Opens a list dialog, filters the first column to `text`, and selects the only row. */
 async function pickFromDialog(
   page: Page,
@@ -143,37 +153,42 @@ test.describe('File master pages', () => {
     }
   });
 
-  test('Ports: pre-entered box, country picked from the list, new and change', async ({ page }) => {
+  test('Ports: similar names, country picked from the list, new and change', async ({ page }) => {
     const posted = interceptSaves(page, '/master-data/ports');
     await signIn(page);
     await page.goto('/File/Ports');
-    await expect(page.getByRole('heading', { name: 'Ports Master Details' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Ports' })).toBeVisible();
+    const list = page.getByRole('list', { name: 'Ports' });
+    await expect(list.getByRole('button').first()).toBeVisible({ timeout: 20_000 });
 
     if (runNew) {
+      await page.getByRole('button', { name: 'New port' }).first().click();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Enter Port Name')).toBeVisible();
+      await expect(page.getByTestId('save-problems')).toContainText('Enter the port name');
 
       // The first letter of a new name lists the existing ports that start with it.
-      await page.locator('#PortName').pressSequentially('D');
-      await expect(page.getByText('Pre-Entered Ports Listing')).toBeVisible();
-      await page.locator('#PortName').fill(`${row} PORT`);
-      await page.locator('#PortCode').fill(row);
-      await page.locator('#IsDivertable').check();
-      await pickFromDialog(page, 'btnCountryCode', 'Countries Listing', 'CountryCode', 'IND');
-      await expect(page.locator('#CountryName')).toHaveValue(/INDIA/i);
+      await page.getByRole('textbox', { name: 'Port name' }).pressSequentially('D');
+      await expect(page.getByTestId('similar-names')).toBeVisible();
+      await page.getByRole('textbox', { name: 'Port name' }).fill(`${row} PORT`);
+      await page.getByRole('textbox', { name: 'Port code' }).fill(row);
+      await page.getByRole('checkbox', { name: 'Divertable' }).check();
+      await pickCountry(page, 'IND');
+      await expect(page.getByRole('textbox', { name: 'Country', exact: false })).toHaveValue('IND');
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully')).toBeVisible();
+      await expect(page.getByTestId('save-result')).toContainText(`Port ${row} created.`);
     }
 
     if (runChange) {
-      await chooseOption(page, 'Change');
-      await pickFromDialog(page, 'btnPortCode', 'Ports Listing', 'PortCode', row);
-      await expect(page.locator('#PortName')).toHaveValue(`${row} PORT`);
-      await expect(page.locator('#IsDivertable')).toBeChecked();
-      await page.locator('#PortName').fill(`${row} PORT CHANGED`);
-      await page.locator('#IsDivertable').uncheck();
+      const search = page.getByRole('searchbox', { name: 'Search ports' });
+      await search.fill(row);
+      await search.press('Enter');
+      await expect(page.getByRole('textbox', { name: 'Port name' })).toHaveValue(`${row} PORT`);
+      await expect(page.getByRole('textbox', { name: 'Divertable' })).toHaveValue('Yes');
+      await page.getByRole('button', { name: 'Edit' }).click();
+      await page.getByRole('textbox', { name: 'Port name' }).fill(`${row} PORT CHANGED`);
+      await page.getByRole('checkbox', { name: 'Divertable' }).uncheck();
       await page.getByRole('button', { name: 'Save' }).click();
-      await expect(page.getByText('Data Saved Successfully').last()).toBeVisible();
+      await expect(page.getByTestId('save-result')).toContainText(`Port ${row} saved.`);
     } else if (!allowSave) {
       expect(posted[0]).toEqual({
         portCode: row,

@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type Ref } from 'react';
+import { useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import TextField from '@mui/material/TextField';
@@ -31,6 +31,12 @@ export interface LookupFieldProps {
   name?: string;
   disabled?: boolean;
   fullWidth?: boolean;
+  required?: boolean;
+  error?: boolean;
+  /** Text under the field: the looked-up name ("INDIA"), or the problem when `error`. */
+  helperText?: ReactNode;
+  /** The longest code the server accepts. */
+  maxLength?: number;
 }
 
 /**
@@ -55,6 +61,10 @@ export function LookupField({
   name,
   disabled,
   fullWidth = true,
+  required,
+  error,
+  helperText,
+  maxLength,
 }: LookupFieldProps) {
   const [text, setText] = useState(value);
   const [syncedValue, setSyncedValue] = useState(value);
@@ -88,8 +98,11 @@ export function LookupField({
       name={name}
       disabled={disabled}
       fullWidth={fullWidth}
+      required={required}
+      error={error}
+      helperText={helperText}
       slotProps={{
-        htmlInput: { readOnly, 'aria-label': ariaLabel },
+        htmlInput: { readOnly, 'aria-label': ariaLabel, maxLength },
         input: {
           readOnly,
           endAdornment: hideSearch ? undefined : (

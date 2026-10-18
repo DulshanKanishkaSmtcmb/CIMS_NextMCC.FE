@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button,
@@ -11,7 +11,6 @@ import {
   StatGroup,
   StatusChip,
   TextInput,
-  type MasterDataMode,
   type ValidationIssue,
 } from '@cims/ui';
 import {
@@ -25,15 +24,8 @@ import {
 import type { ApiQueryError } from '../../services/axiosBaseQuery';
 import { PATHS } from '../../routes/paths';
 import { smartMatches } from './masterEntry';
-import {
-  auditText,
-  classifySaveFailure,
-  formDiffers,
-  MASTER_DATA_CONTEXT,
-  SHARED_MESSAGES,
-  withoutIssue,
-  type DetailNotice,
-} from './masterDataPage';
+import { auditText, MASTER_DATA_CONTEXT, sameKey, SHARED_MESSAGES } from './masterDataPage';
+import { useMasterList, useMasterRecord } from './useMasterRecord';
 import { COUNTRY_MESSAGES as MESSAGES } from './countryMessages';
 import { MasterDetailNotice } from './MasterDetailNotice';
 import { SimilarNamesHint } from './SimilarNamesHint';
@@ -47,8 +39,6 @@ interface CountryForm {
   cargoMovement: string;
 }
 
-type Field = keyof CountryForm;
-
 /** The one default object a new country starts from (legacy `btnNewClick`: empty, Cargo Movement "Both"). */
 const EMPTY: CountryForm = { countryCode: '', countryName: '', cargoMovement: 'Both' };
 
@@ -58,7 +48,7 @@ const toForm = (c: Country): CountryForm => ({
   cargoMovement: c.cargoMovement,
 });
 
-const sameCode = (a: string, b: string) => a.trimEnd().toLowerCase() === b.trimEnd().toLowerCase();
+const fmt = (date: string) => formatDmy(date, true);
 
 /**
  * Countries (legacy /File/Country "Country Master Details", CloudMenu 100.02) on the MasterDataPage template:
@@ -75,43 +65,20 @@ export function CountryPage() {
   const [searchNames] = useLazySearchCountriesQuery();
   const [saveCountry] = useSaveCountryMutation();
 
-  const [countries, setCountries] = useState<Country[]>([]);
-  const [listState, setListState] = useState<'loading' | 'ready' | 'failed'>('loading');
-  const [mode, setMode] = useState<MasterDataMode>('idle');
-  const [selected, setSelected] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [baseline, setBaseline] = useState<CountryForm>(EMPTY);
-  const [form, setForm] = useState<CountryForm>(EMPTY);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [notice, setNotice] = useState<DetailNotice | null>(null);
-  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [existingCode, setExistingCode] = useState<string | null>(null);
   const [hits, setHits] = useState<CountryNameHit[] | null>(null);
   const [hitFilter, setHitFilter] = useState('');
-  const [saving, setSaving] = useState(false);
+
+  const list = useMasterList(loadList);
+  const record = useMasterRecord<CountryForm>(EMPTY, () => {
+    setExistingCode(null);
+    setHits(null);
+    setHitFilter('');
+  });
+  const { mode, form, errors, editing } = record;
 
   const codeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const retryRef = useRef<(() => void) | null>(null);
-  /** Increases with every record opened or form started, so a late answer for an older one is ignored. */
-  const requestRef = useRef(0);
-
-  const fetchList = useCallback(
-    () =>
-      loadList().then((result) => {
-        if (result.data) {
-          setCountries(result.data);
-          setListState('ready');
-        } else {
-          setListState('failed');
-        }
-      }),
-    [loadList],
-  );
-
-  useEffect(() => {
-    void fetchList();
-  }, [fetchList]);
 
   // Put the cursor where the mode expects input: the code of a new country, the name of one being changed.
   useEffect(() => {
@@ -135,118 +102,60 @@ export function CountryPage() {
     [hits, hitFilter],
   );
 
-  const clearFeedback = () => {
-    setNotice(null);
-    setErrors({});
-    setExistingCode(null);
-    setHits(null);
-    setHitFilter('');
-  };
-
   /** Selecting a record: legacy "Select" in the list dialog / Enter on a code, then `getCountryData`. */
   const openRecord = async (code: string) => {
-    const request = ++requestRef.current;
-    clearFeedback();
-    setMode('view');
-    setSelected(code);
-    setLoaded(false);
-    setDetailLoading(true);
+    const request = record.beginView(code);
     const result = await loadCountry(code);
-    if (request !== requestRef.current) return;
-    setDetailLoading(false);
+    if (!record.isCurrent(request)) return;
     if (result.data) {
-      const values = toForm(result.data);
-      setBaseline(values);
-      setForm(values);
-      setLoaded(true);
+      record.showRecord(toForm(result.data));
     } else if ((result.error as ApiQueryError | undefined)?.status === 404) {
-      setNotice({
+      record.failView({
         kind: 'error',
         title: MESSAGES.loadFailedTitle,
         message: MESSAGES.notFound(code),
       });
     } else {
-      retryRef.current = () => void openRecord(code);
-      setNotice({
-        kind: 'error',
-        title: MESSAGES.loadFailedTitle,
-        message: SHARED_MESSAGES.loadFailed,
-        retry: true,
-      });
+      record.failView(
+        {
+          kind: 'error',
+          title: MESSAGES.loadFailedTitle,
+          message: SHARED_MESSAGES.loadFailed,
+          retry: true,
+        },
+        () => void openRecord(code),
+      );
     }
-  };
-
-  /** Legacy Option "New" / `btnNewClick`: an empty form from the one default object. */
-  const startNew = () => {
-    requestRef.current++;
-    clearFeedback();
-    setSelected(null);
-    setLoaded(true);
-    setDetailLoading(false);
-    setBaseline(EMPTY);
-    setForm(EMPTY);
-    setMode('new');
-  };
-
-  /** Legacy Option "Change": the same record, editable (the code stays fixed). */
-  const startEdit = () => {
-    clearFeedback();
-    setMode('edit');
-  };
-
-  const cancel = () => {
-    requestRef.current++;
-    clearFeedback();
-    setDetailLoading(false);
-    if (mode === 'edit') {
-      setForm(baseline);
-      setMode('view');
-    } else {
-      setForm(EMPTY);
-      setSelected(null);
-      setMode('idle');
-    }
-  };
-
-  /** A field became valid: its message goes, on the field and in the summary. */
-  const clearError = (field: Field) => {
-    setErrors((current) => {
-      if (!current[field]) return current;
-      const next = { ...current };
-      delete next[field];
-      return next;
-    });
-    setNotice((current) => withoutIssue(current, field));
   };
 
   const changeCode = (next: string) => {
-    setForm((f) => ({ ...f, countryCode: next }));
+    record.update('countryCode', next);
     setExistingCode(null);
-    if (next.length > 0) clearError('countryCode');
+    if (next.length > 0) record.clearError('countryCode');
   };
 
   /** New, not legacy: warn as soon as the code is left if the loaded list already has it (the save still checks). */
   const checkCodeInList = () => {
     if (mode !== 'new' || form.countryCode.length === 0) return;
-    const match = countries.find((c) => sameCode(c.countryCode, form.countryCode));
+    const match = list.items.find((c) => sameKey(c.countryCode, form.countryCode));
     if (match) {
-      setErrors((e) => ({ ...e, countryCode: MESSAGES.codeInUse(match.countryName) }));
+      record.setErrors((e) => ({ ...e, countryCode: MESSAGES.codeInUse(match.countryName) }));
       setExistingCode(match.countryCode);
     }
   };
 
   /** Legacy `CountryName.subscribe` -> `LoadPreviousData`: New only; the first letter asks the server, more narrows. */
   const changeName = (next: string) => {
-    setForm((f) => ({ ...f, countryName: next }));
-    if (next.length > 0) clearError('countryName');
+    record.update('countryName', next);
+    if (next.length > 0) record.clearError('countryName');
     if (mode !== 'new') return;
     if (next.length === 0) {
       setHits(null);
       setHitFilter('');
     } else if (next.length === 1) {
-      const request = requestRef.current;
+      const request = record.nextRequest();
       void searchNames(next).then((result) => {
-        if (request !== requestRef.current) return;
+        if (!record.isCurrent(request)) return;
         setHits(result.data && result.data.length > 0 ? result.data : null);
         setHitFilter('');
       });
@@ -255,7 +164,7 @@ export function CountryPage() {
     }
   };
 
-  const issue = (field: Field, message: string): ValidationIssue => ({
+  const issue = (field: keyof CountryForm, message: string): ValidationIssue => ({
     field,
     message,
     onSelect: () => (field === 'countryCode' ? codeRef : nameRef).current?.focus(),
@@ -263,108 +172,50 @@ export function CountryPage() {
 
   const refuseCode = (code: string) => {
     const message = MESSAGES.alreadyExists(code);
-    setErrors({ countryCode: message });
+    record.showProblems([issue('countryCode', message)]);
     setExistingCode(code);
-    setNotice({ kind: 'problems', issues: [issue('countryCode', message)] });
   };
 
-  /** Legacy `beforeSaveCheking` + `chkCountryCode` + `btnSaveData`, in that order. */
+  /** Legacy `beforeSaveCheking` (name, then code) + `chkCountryCode` + `btnSaveData`. */
   const save = async () => {
-    if (saving || (mode !== 'new' && mode !== 'edit')) return;
+    if (record.saving || !editing) return;
     const isNew = mode === 'new';
     const values = form;
     const problems: ValidationIssue[] = [];
     if (values.countryName.length <= 0) problems.push(issue('countryName', MESSAGES.enterName));
     if (values.countryCode.length <= 0) problems.push(issue('countryCode', MESSAGES.enterCode));
     if (problems.length > 0) {
-      setErrors(Object.fromEntries(problems.map((p) => [p.field, p.message])));
-      setNotice({ kind: 'problems', issues: problems });
+      record.showProblems(problems);
       return;
     }
-
-    setSaving(true);
-    setNotice(null);
-    retryRef.current = () => void save();
-    try {
-      const check = await loadCountry(values.countryCode);
-      const exists = Boolean(check.data);
-      if (!exists && (check.error as ApiQueryError | undefined)?.status !== 404) {
-        setNotice({
-          kind: 'error',
-          title: MESSAGES.checkFailedTitle,
-          message: SHARED_MESSAGES.noServer,
-          retry: true,
-        });
-        return;
-      }
-      if (isNew && exists) {
-        refuseCode(values.countryCode);
-        return;
-      }
-      if (!isNew && !exists) {
-        setNotice({
-          kind: 'error',
-          title: SHARED_MESSAGES.notSavedTitle,
-          message: MESSAGES.doesNotExist(values.countryCode),
-        });
-        return;
-      }
-
-      const result = await saveCountry({
-        mode: isNew ? 'New' : 'Change',
-        countryCode: values.countryCode,
-        countryName: values.countryName,
-        cargoMovement: values.cargoMovement,
-      });
-      if ('data' in result && result.data) {
-        requestRef.current++;
-        clearFeedback();
-        setBaseline(values);
-        setForm(values);
-        setSelected(values.countryCode);
-        setLoaded(true);
-        setMode('view');
-        setNotice({ kind: 'saved', text: MESSAGES.saved(values.countryCode, isNew) });
-        void fetchList();
-      } else if ('error' in result) {
-        const failure = classifySaveFailure(result.error as ApiQueryError);
-        if (failure.kind === 'exists') {
-          refuseCode(values.countryCode);
-        } else if (failure.kind === 'missing') {
-          setNotice({
-            kind: 'error',
-            title: SHARED_MESSAGES.notSavedTitle,
-            message: MESSAGES.doesNotExist(values.countryCode),
-          });
-        } else if (failure.kind === 'noServer') {
-          setNotice({
-            kind: 'error',
-            title: SHARED_MESSAGES.noServerTitle,
-            message: SHARED_MESSAGES.noServer,
-            retry: true,
-          });
-        } else {
-          setNotice({
-            kind: 'error',
-            title: SHARED_MESSAGES.notSavedTitle,
-            message: SHARED_MESSAGES.notSaved,
-            details: failure.details,
-          });
-        }
-      }
-    } finally {
-      setSaving(false);
-    }
+    await record.runKeyedSave({
+      isNew,
+      key: values.countryCode,
+      check: () => loadCountry(values.countryCode),
+      send: () =>
+        saveCountry({
+          mode: isNew ? 'New' : 'Change',
+          countryCode: values.countryCode,
+          countryName: values.countryName,
+          cargoMovement: values.cargoMovement,
+        }),
+      messages: MESSAGES,
+      refuseExisting: () => refuseCode(values.countryCode),
+      onSaved: () => {
+        record.showSaved(values, values.countryCode, MESSAGES.saved(values.countryCode, isNew));
+        void list.refresh();
+      },
+      retry: () => void save(),
+    });
   };
 
-  const editing = mode === 'new' || mode === 'edit';
-  const listRow = countries.find((c) => c.countryCode === selected);
+  const listRow = list.items.find((c) => c.countryCode === record.selected);
   const title =
     mode === 'new'
       ? 'New country'
-      : baseline.countryName && loaded
-        ? `${baseline.countryName} (${selected})`
-        : (selected ?? 'Country details');
+      : record.loaded && record.baseline.countryName
+        ? `${record.baseline.countryName} (${record.selected})`
+        : (record.selected ?? 'Country details');
 
   return (
     <MasterDataPage<Country>
@@ -372,7 +223,7 @@ export function CountryPage() {
       title="Countries"
       context={MASTER_DATA_CONTEXT}
       entityName="country"
-      items={countries}
+      items={list.items}
       getItemId={(c) => c.countryCode}
       getSearchText={(c) => `${c.countryCode} ${c.countryName} ${c.cargoMovement}`}
       renderItem={(c) => ({
@@ -380,33 +231,30 @@ export function CountryPage() {
         secondary: `${c.countryCode} · ${c.cargoMovement}`,
         meta: c.contractBlock ? <StatusChip tone="warning" label="Contract block" /> : undefined,
       })}
-      listLoading={listState === 'loading'}
-      listError={listState === 'failed' ? SHARED_MESSAGES.listFailed : null}
-      onRetryList={() => {
-        setListState('loading');
-        void fetchList();
-      }}
-      selectedId={selected}
+      listLoading={list.state === 'loading'}
+      listError={list.state === 'failed' ? SHARED_MESSAGES.listFailed : null}
+      onRetryList={list.reload}
+      selectedId={record.selected}
       onSelect={(c) => void openRecord(c.countryCode)}
       mode={mode}
-      onNew={startNew}
-      onEdit={loaded ? startEdit : undefined}
-      onCancel={cancel}
+      onNew={() => record.startNew()}
+      onEdit={record.loaded ? record.startEdit : undefined}
+      onCancel={record.cancel}
       onSave={() => void save()}
-      saving={saving}
-      dirty={editing && formDiffers(form, baseline)}
+      saving={record.saving}
+      dirty={record.dirty}
       detailTitle={title}
-      detailLoading={detailLoading}
+      detailLoading={record.detailLoading}
       detailMessage={
         <MasterDetailNotice
-          notice={notice}
-          onRetry={() => retryRef.current?.()}
-          onDismiss={notice?.kind === 'error' ? () => setNotice(null) : undefined}
+          notice={record.notice}
+          onRetry={record.retry}
+          onDismiss={record.notice?.kind === 'error' ? record.dismissNotice : undefined}
         />
       }
       onClose={() => void navigate(PATHS.home)}
     >
-      {loaded ? (
+      {record.loaded ? (
         <Stack spacing={2}>
           <FieldGrid columns={{ xs: 1, sm: 2 }}>
             <TextInput
@@ -449,7 +297,7 @@ export function CountryPage() {
                 label="Cargo movement"
                 value={form.cargoMovement}
                 options={CARGO_MOVEMENTS}
-                onChange={(next) => setForm((f) => ({ ...f, cargoMovement: next }))}
+                onChange={(next) => record.update('cargoMovement', next)}
                 data-testid="cargo-movement"
               />
             ) : (
@@ -474,5 +322,3 @@ export function CountryPage() {
     </MasterDataPage>
   );
 }
-
-const fmt = (date: string) => formatDmy(date, true);

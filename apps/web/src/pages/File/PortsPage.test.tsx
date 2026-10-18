@@ -1,13 +1,14 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetClient } from '@cims/api-client';
 import { renderWithProviders, signedInState } from '../../test/renderWithProviders';
 import { installMockApi, type MockCall, type MockHandler } from '../../test/mockApi';
+import { mockViewportWidth } from '../../test/matchMedia';
 import type { Country, Port } from '../../services/masterDataApi';
 import { PortsPage } from './PortsPage';
 
-// DataGrid interactions are slow in jsdom.
+// DataGrid interactions (the country lookup dialog) are slow in jsdom.
 vi.setConfig({ testTimeout: 30_000 });
 
 const port = (code: string, name: string, countryCode: string, isDivertable = false): Port => ({
@@ -46,6 +47,7 @@ let saveReply: MockHandler = () => ({
   status: 200,
   data: { portCode: 'ZZT1', message: 'Data Saved Successfully' },
 });
+let restoreViewport: () => void = () => undefined;
 
 function setup() {
   calls = installMockApi((call) => {
@@ -82,7 +84,12 @@ function setup() {
   });
 }
 
+beforeEach(() => {
+  restoreViewport = mockViewportWidth(1440);
+});
+
 afterEach(() => {
+  restoreViewport();
   resetClient();
   saveReply = () => ({
     status: 200,
@@ -90,88 +97,97 @@ afterEach(() => {
   });
 });
 
-const field = (label: string) => screen.getByRole('textbox', { name: label });
+const field = (label: RegExp) => screen.getByRole('textbox', { name: label });
 const save = () => screen.getByRole('button', { name: 'Save' });
-const el = (id: string) => document.getElementById(id) as HTMLElement;
+const findList = () => screen.findByRole('list', { name: 'Ports' });
+const writes = () => calls.filter((c) => c.method === 'POST' || c.method === 'PUT');
 
-async function chooseOption(user: ReturnType<typeof userEvent.setup>, option: string) {
-  await user.click(screen.getByRole('combobox', { name: 'Option' }));
-  await user.click(await screen.findByRole('option', { name: option }));
+async function startNew(user: ReturnType<typeof userEvent.setup>) {
+  await within(await findList()).findByRole('button', { name: /DELHI/ });
+  await user.click(screen.getAllByRole('button', { name: 'New port' })[0]);
+  return screen.findByRole('region', { name: 'New port' });
 }
 
-async function pickFromList(
-  user: ReturnType<typeof userEvent.setup>,
-  button: string,
-  title: string,
-  rowText: string,
-) {
-  await user.click(el(button));
-  const dialog = await screen.findByRole('dialog', { name: title });
+async function openPort(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await within(await findList()).findByRole('button', { name: new RegExp(name) }));
+  await waitFor(() => expect(field(/Port name/)).toHaveValue(name));
+}
+
+async function pickCountry(user: ReturnType<typeof userEvent.setup>, rowText: string) {
+  await user.click(screen.getByRole('button', { name: 'Search countries' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Countries' });
   const row = within(dialog).getByText(rowText).closest('[role="row"]') as HTMLElement;
   await user.click(within(row).getByRole('button', { name: 'Select' }));
 }
 
 describe('PortsPage', () => {
-  it('shows the legacy fields in order with their ids and defaults', () => {
+  it('lists the ports (country, divertable) next to an empty detail', async () => {
     setup();
 
-    expect(screen.getByRole('heading', { name: 'Ports Master Details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Ports' })).toBeInTheDocument();
+    const items = within(await findList()).getAllByRole('button');
+    expect(items.map((i) => i.textContent)).toEqual([
+      'DHAKADAC · No country',
+      'DELHIDEL · IND',
+      'London GatewayGBLGP · UKDivertable',
+    ]);
+    expect(screen.getByRole('heading', { name: 'Select a port' })).toBeInTheDocument();
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`GET ${BASE}`]);
+  });
+
+  it('starts a new port with every field empty and Divertable off, the cursor in the code', async () => {
+    const user = userEvent.setup();
+    setup();
+    await startNew(user);
+
     const ordered = [
-      screen.getByRole('combobox', { name: 'Option' }),
-      field('Port Code'),
-      field('Port Name'),
-      screen.getByRole('checkbox', { name: 'Is Divertable' }),
-      field('Country Code'),
-      field('Country Name'),
-      save(),
-      screen.getByRole('button', { name: 'New' }),
-      screen.getByRole('button', { name: 'Close' }),
+      field(/Port code/),
+      field(/Port name/),
+      field(/Country/),
+      screen.getByRole('checkbox', { name: 'Divertable' }),
     ];
     ordered.slice(1).forEach((node, i) => {
       expect(
         ordered[i].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
-    expect(field('Port Code')).toHaveAttribute('id', 'PortCode');
-    expect(field('Port Name')).toHaveAttribute('id', 'PortName');
-    expect(screen.getByRole('checkbox', { name: 'Is Divertable' })).toHaveAttribute(
-      'id',
-      'IsDivertable',
-    );
-    expect(field('Country Code')).toHaveAttribute('id', 'CountryCode');
-    expect(field('Country Name')).toHaveAttribute('id', 'CountryName');
-    expect(el('btnPortCode')).toBeInTheDocument();
-    expect(el('btnCountryCode')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Is Divertable' })).not.toBeChecked();
-    expect(calls).toHaveLength(0);
+    await waitFor(() => expect(field(/Port code/)).toHaveFocus());
+    expect(screen.getByRole('checkbox', { name: 'Divertable' })).not.toBeChecked();
+    expect(field(/Country/)).toHaveAccessibleDescription('Optional.');
   });
 
-  it('asks for the name before the code, with the legacy messages', async () => {
+  it('asks for the name before the code and sends nothing', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
     await user.click(save());
-    expect(await screen.findByText('Enter Port Name')).toBeInTheDocument();
-    await user.type(field('Port Name'), 'Zed');
-    await user.click(save());
-    expect(await screen.findByText('Enter Port Code')).toBeInTheDocument();
-    expect(calls.filter((c) => !c.url.endsWith('/search'))).toHaveLength(0);
+    const summary = await screen.findByTestId('save-problems');
+    expect(
+      within(summary)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['Enter the port name', 'Enter the port code']);
+    await user.type(field(/Port name/), 'Zed');
+    expect(within(screen.getByTestId('save-problems')).getAllByRole('listitem')).toHaveLength(1);
+    expect(calls.filter((c) => c.url !== BASE && !c.url.endsWith('/search'))).toHaveLength(0);
   });
 
-  it('saves a new port with POST, picking the country from the list, and keeps Save disabled until New', async () => {
+  it('saves a new port with POST, picking the country from the list, then shows it read-only', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
-    await user.type(field('Port Code'), 'ZZT1');
+    await user.type(field(/Port code/), 'ZZT1');
     await user.tab();
-    await user.type(field('Port Name'), 'Zed Port');
-    await user.click(screen.getByRole('checkbox', { name: 'Is Divertable' }));
-    await pickFromList(user, 'btnCountryCode', 'Countries Listing', 'INDIA');
-    await waitFor(() => expect(field('Country Name')).toHaveValue('INDIA'));
-    expect(field('Country Code')).toHaveValue('IND');
+    await user.type(field(/Port name/), 'Zed Port');
+    await user.click(screen.getByRole('checkbox', { name: 'Divertable' }));
+    await pickCountry(user, 'INDIA');
+    await waitFor(() => expect(field(/Country/)).toHaveAccessibleDescription('INDIA'));
+    expect(field(/Country/)).toHaveValue('IND');
     await user.click(save());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-result')).toHaveTextContent('Port ZZT1 created.');
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.url).toBe(BASE);
     expect(post?.body).toEqual({
@@ -180,47 +196,54 @@ describe('PortsPage', () => {
       countryCode: 'IND',
       isDivertable: true,
     });
-    expect(save()).toBeDisabled();
+    expect(calls.findIndex((c) => c.url === `${BASE}/ZZT1`)).toBeLessThan(
+      calls.findIndex((c) => c.method === 'POST'),
+    );
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(field(/Divertable/)).toHaveValue('Yes');
+    expect(field(/Country/)).toHaveAccessibleDescription('INDIA');
 
-    await user.click(screen.getByRole('button', { name: 'New' }));
-    expect(save()).toBeEnabled();
-    expect(field('Port Code')).toHaveValue('');
-    expect(field('Country Name')).toHaveValue('');
-    // the legacy page forgot to reset this one
-    expect(screen.getByRole('checkbox', { name: 'Is Divertable' })).not.toBeChecked();
+    // New starts again from the defaults (the legacy page kept Is Divertable: P1).
+    await user.click(screen.getAllByRole('button', { name: 'New port' })[0]);
+    expect(field(/Port code/)).toHaveValue('');
+    expect(field(/Country/)).toHaveValue('');
+    expect(screen.getByRole('checkbox', { name: 'Divertable' })).not.toBeChecked();
   });
 
   it('refuses a port code that already exists in New mode without posting', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
-    await user.type(field('Port Code'), 'DEL');
-    await user.type(field('Port Name'), 'Delhi again');
+    await user.type(field(/Port code/), 'DEL');
+    await user.type(field(/Port name/), 'Delhi again');
     await user.click(save());
 
-    expect(await screen.findByText('Port Code Already Exist')).toBeInTheDocument();
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
-    expect(save()).toBeEnabled();
+    expect(await screen.findByTestId('save-problems')).toHaveTextContent(
+      'Port code DEL already exists. Choose another code.',
+    );
+    expect(writes()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Discard and open DEL' })).toBeInTheDocument();
   });
 
-  it('in Change mode loads the picked port with its country name and saves with PUT', async () => {
+  it('opens a port with its country name, edits it and saves with PUT', async () => {
     const user = userEvent.setup();
     setup();
 
-    await chooseOption(user, 'Change');
-    expect(field('Port Code')).toHaveAttribute('readonly');
-    await pickFromList(user, 'btnPortCode', 'Ports Listing', 'London Gateway');
+    await openPort(user, 'London Gateway');
+    await waitFor(() => expect(field(/Country/)).toHaveAccessibleDescription('United Kingdom'));
+    expect(field(/Port code/)).toHaveValue('GBLGP');
+    expect(field(/Port name/)).toHaveAttribute('readonly');
+    expect(field(/Divertable/)).toHaveValue('Yes');
+    expect(screen.queryByRole('button', { name: 'Search countries' })).not.toBeInTheDocument();
 
-    await waitFor(() => expect(field('Country Name')).toHaveValue('United Kingdom'));
-    expect(field('Port Code')).toHaveValue('GBLGP');
-    expect(field('Port Name')).toHaveValue('London Gateway');
-    expect(field('Country Code')).toHaveValue('UK');
-    expect(screen.getByRole('checkbox', { name: 'Is Divertable' })).toBeChecked();
-
-    await user.click(screen.getByRole('checkbox', { name: 'Is Divertable' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(field(/Port code/)).toHaveAttribute('readonly');
+    await user.click(screen.getByRole('checkbox', { name: 'Divertable' }));
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
     await user.click(save());
 
-    expect(await screen.findByText('Data Saved Successfully')).toBeInTheDocument();
+    expect(await screen.findByTestId('save-result')).toHaveTextContent('Port GBLGP saved.');
     const put = calls.find((c) => c.method === 'PUT');
     expect(put?.url).toBe(`${BASE}/GBLGP`);
     expect(put?.body).toEqual({
@@ -230,51 +253,61 @@ describe('PortsPage', () => {
     });
   });
 
-  it('clears the country name when the loaded port has no country', async () => {
+  it('shows no country name for a port without a country (legacy kept the previous one)', async () => {
     const user = userEvent.setup();
     setup();
 
-    await chooseOption(user, 'Change');
-    await pickFromList(user, 'btnPortCode', 'Ports Listing', 'DELHI');
-    await waitFor(() => expect(field('Country Name')).toHaveValue('INDIA'));
-    await pickFromList(user, 'btnPortCode', 'Ports Listing', 'DHAKA');
-
-    await waitFor(() => expect(field('Port Name')).toHaveValue('DHAKA'));
-    await waitFor(() => expect(field('Country Name')).toHaveValue(''));
-    expect(field('Country Code')).toHaveValue('');
+    await openPort(user, 'DELHI');
+    await waitFor(() => expect(field(/Country/)).toHaveAccessibleDescription('INDIA'));
+    await openPort(user, 'DHAKA');
+    expect(field(/Country/)).toHaveValue('');
+    expect(field(/Country/)).toHaveAccessibleDescription('No country');
   });
 
-  it('in View mode locks the fields and the Is Divertable box and disables Save; New unlocks them', async () => {
+  it('says when a typed country code does not exist and loads the name of one that does', async () => {
     const user = userEvent.setup();
     setup();
+    await startNew(user);
 
-    await chooseOption(user, 'View');
-    expect(save()).toBeDisabled();
-    await pickFromList(user, 'btnPortCode', 'Ports Listing', 'DELHI');
-
-    await waitFor(() => expect(field('Port Name')).toHaveValue('DELHI'));
-    await waitFor(() => expect(field('Port Name')).toHaveAttribute('readonly'));
-    expect(screen.getByRole('checkbox', { name: 'Is Divertable' })).toBeDisabled();
-    expect(el('btnPortCode')).toBeDisabled();
-
-    await chooseOption(user, 'New');
-    expect(field('Port Name')).not.toHaveAttribute('readonly');
-    expect(el('btnPortCode')).toBeEnabled();
-    expect(screen.getByRole('checkbox', { name: 'Is Divertable' })).toBeEnabled();
+    await user.type(field(/Country/), 'XX{Enter}');
+    await waitFor(() =>
+      expect(field(/Country/)).toHaveAccessibleDescription(
+        'No country with code XX. Pick one with the search button.',
+      ),
+    );
+    await user.clear(field(/Country/));
+    await user.type(field(/Country/), 'UK');
+    await user.tab();
+    await waitFor(() => expect(field(/Country/)).toHaveAccessibleDescription('United Kingdom'));
   });
 
-  it('shows the Pre-Entered Ports Listing box while a new name is typed', async () => {
+  it('cancelling an edit restores the port and its country', async () => {
     const user = userEvent.setup();
     setup();
+    await openPort(user, 'DELHI');
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await pickCountry(user, 'United Kingdom');
+    await waitFor(() => expect(field(/Country/)).toHaveAccessibleDescription('United Kingdom'));
 
-    await user.type(field('Port Name'), 'D');
-    expect(await screen.findByText('Pre-Entered Ports Listing')).toBeInTheDocument();
-    const table = el('tblPdata');
-    expect(within(table).getByText('DHAKA')).toBeInTheDocument();
-    expect(within(table).getByText('DELHI')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(await screen.findByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(field(/Country/)).toHaveValue('IND'));
+    expect(field(/Country/)).toHaveAccessibleDescription('INDIA');
+    expect(writes()).toHaveLength(0);
+  });
 
-    await user.type(field('Port Name'), 'EL');
-    expect(within(table).queryByText('DHAKA')).not.toBeInTheDocument();
-    expect(within(table).getByText('DELHI')).toBeInTheDocument();
+  it('shows similar names while a new name is typed', async () => {
+    const user = userEvent.setup();
+    setup();
+    await startNew(user);
+
+    await user.type(field(/Port name/), 'D');
+    const hint = await screen.findByTestId('similar-names');
+    expect(hint).toHaveTextContent('DHAKA');
+    expect(hint).toHaveTextContent('DELHI');
+
+    await user.type(field(/Port name/), 'EL');
+    expect(screen.getByTestId('similar-names')).not.toHaveTextContent('DHAKA');
+    expect(screen.getByTestId('similar-names')).toHaveTextContent('DELHI');
   });
 });

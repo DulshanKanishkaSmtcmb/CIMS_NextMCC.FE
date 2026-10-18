@@ -152,7 +152,7 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Code field with a search button: the legacy "input + magnifier button + dialog with a DataTable" lookup (Country, Ports, DC pages). Pair it with `LookupDialog`.
 - **Wraps:** `TextField` with an `InputAdornment` and `IconButton` (Search icon).
-- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `hideSearch` (no search button at all, legacy `visible:` binding; PM Master in New mode), `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `ariaLabel` (name of the input when there is no visible label, e.g. in a table cell), `label`, `inputRef`, `name`, `disabled`, `fullWidth`.
+- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `hideSearch` (no search button at all, legacy `visible:` binding; PM Master in New mode), `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `ariaLabel` (name of the input when there is no visible label, e.g. in a table cell), `label`, `inputRef`, `name`, `disabled`, `fullWidth`. Also `required?`, `error?`, `helperText?` (the looked-up name, or the problem), `maxLength?`.
 - **Behaviour:** a `value` set by the page (a dialog selection, a loaded record, New) replaces the typed text. A read-only field still searches unless `searchDisabled`.
 - **Usage:**
   ```tsx
@@ -309,6 +309,14 @@ The design rules behind these are in the legacy workspace `docs/19-ux-design-pri
 
 - **Purpose:** One choice among two to five, all visible (ToggleButtonGroup, exclusive, cannot be cleared), visible label as the group name, 40 px+ buttons. Confirm Arrivals' Shipment Local / Import. More than five choices: `SelectField`.
 - **Key props:** `label`, `value`, `options` (as `SelectField`), `onChange`, `disabled?`, `fullWidth?`.
+- **Tests:** `components/uxFoundation.test.tsx`.
+
+### CheckboxField (status: available)
+
+- **Purpose:** A yes/no field of a form: checkbox and label as one click target (touch-target height), optional helper line under it (described-by). In a read-only view show the value as text instead of a disabled box.
+- **Wraps:** `FormControlLabel`, `Checkbox`, `FormHelperText`.
+- **Key props:** `label`, `checked`, `onChange(checked)`, `helperText?`, `disabled?`, `id?`.
+- **Usage:** Ports "Divertable", PM Master flags.
 - **Tests:** `components/uxFoundation.test.tsx`.
 
 ### StatGroup, formatNumber (status: available)

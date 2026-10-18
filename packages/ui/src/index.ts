@@ -83,6 +83,7 @@ export {
   type ValidationIssue,
 } from './components/ValidationSummary';
 export { SegmentedControl, type SegmentedControlProps } from './components/SegmentedControl';
+export { CheckboxField, type CheckboxFieldProps } from './components/CheckboxField';
 export { StatGroup, type StatGroupProps, type StatItem } from './components/StatGroup';
 export { formatNumber, NUMBER_LOCALE } from './components/format';
 export {

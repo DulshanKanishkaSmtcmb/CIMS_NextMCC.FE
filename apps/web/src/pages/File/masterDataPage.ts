@@ -74,3 +74,7 @@ export function withoutIssue(notice: DetailNotice | null, field: string): Detail
   if (issues.length === notice.issues.length) return notice;
   return issues.length > 0 ? { kind: 'problems', issues } : null;
 }
+
+/** SQL Server's comparison of a key: case-insensitive collation, trailing spaces ignored. */
+export const sameKey = (a: string, b: string) =>
+  a.trimEnd().toLowerCase() === b.trimEnd().toLowerCase();
