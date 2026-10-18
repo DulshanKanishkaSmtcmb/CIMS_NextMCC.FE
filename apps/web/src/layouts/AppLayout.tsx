@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { Suspense, useMemo } from 'react';
 import { Outlet } from 'react-router-dom';
 import { DashboardLayout } from '@toolpad/core/DashboardLayout';
 import { ReactRouterAppProvider } from '@toolpad/core/react-router';
 import type { Authentication, Branding, Session } from '@toolpad/core/AppProvider';
-import { cimsTheme } from '@cims/ui';
+import { cimsTheme, PageLoading } from '@cims/ui';
 import { userManager } from '../auth/userManager';
 import { TenantSwitcherContainer } from '../components/TenantSwitcherContainer';
 import { buildNavigation } from '../navigation/buildNavigation';
@@ -51,7 +51,10 @@ export function AppLayout() {
       authentication={AUTHENTICATION}
     >
       <DashboardLayout slots={{ toolbarActions: ToolbarActions }}>
-        <Outlet />
+        {/* Pages load lazily; keep the shell on screen while the next page downloads. */}
+        <Suspense fallback={<PageLoading />}>
+          <Outlet />
+        </Suspense>
       </DashboardLayout>
     </ReactRouterAppProvider>
   );

@@ -118,5 +118,6 @@ Both packages are consumed from source (`exports` points at `src/index.ts`). Whe
 ## Notes
 
 - ESLint stays on major version 9 as specified. The 9.x line is flagged end of life on npm; move to ESLint 10 when the other CIMS repositories do.
-- The production bundle is one 1.3 MB chunk (about 410 KB gzipped) and Vite warns about it. Route-level lazy loading is the next step once there are more pages.
+- Every page and the application shell are lazy loaded (`React.lazy` + `Suspense` with the `PageLoading` fallback from `@cims/ui`), and `apps/web/vite.config.ts` splits vendor code into react, mui, mui-x, toolpad, router, redux and oidc chunks. New pages must be lazy loaded in `apps/web/src/routes/AppRoutes.tsx`. The entry chunk is about 12 kB.
+- The SPA is served at the site root (Vite `base` is `/`, no router basename). The gateway sends only the flipped legacy page paths, `/auth/callback`, `/login` and `/assets/` to this container; `apps/web/nginx/default.conf` documents the contract. Deep links and refreshes work through the `index.html` fallback.
 - Legacy sounds are not copied into this repository. See the ScanFeedback entry in the registry.

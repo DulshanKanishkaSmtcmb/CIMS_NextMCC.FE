@@ -142,6 +142,14 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 - **Usage:** `<ConfirmDialog open={open} destructive title="Delete line?" onConfirm={remove} onCancel={close} />`
 - **Tests:** `components/overlays.test.tsx`.
 
+### PageLoading (status: available)
+
+- **Purpose:** Fallback while a lazily loaded page downloads. Use it as the `Suspense` fallback.
+- **Wraps:** `Box`, `CircularProgress`.
+- **Key props:** `label?` (screen reader text, default "Loading page"), `fullScreen?` (fill the window height, for the first load).
+- **Usage:** `<Suspense fallback={<PageLoading />}><Outlet /></Suspense>`
+- **Tests:** `components/overlays.test.tsx`.
+
 ### PageHeader (status: available)
 
 - **Purpose:** Page title block with optional subtitle and actions.

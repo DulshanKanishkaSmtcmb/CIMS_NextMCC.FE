@@ -4,6 +4,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { CimsThemeProvider } from '../CimsThemeProvider';
 import { BlockingOverlay } from './BlockingOverlay';
 import { ConfirmDialog } from './ConfirmDialog';
+import { PageLoading } from './PageLoading';
+
+describe('PageLoading', () => {
+  it('is an accessible status with a progress indicator', () => {
+    render(
+      <CimsThemeProvider>
+        <PageLoading />
+      </CimsThemeProvider>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Loading page' })).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+});
 
 describe('BlockingOverlay', () => {
   it('shows the default message while open', () => {

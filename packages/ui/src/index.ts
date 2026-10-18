@@ -20,6 +20,7 @@ export {
 export { BlockingOverlay, type BlockingOverlayProps } from './components/BlockingOverlay';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export { PageHeader, type PageHeaderProps } from './components/PageHeader';
+export { PageLoading, type PageLoadingProps } from './components/PageLoading';
 export { TenantSwitcher, type Tenant, type TenantSwitcherProps } from './components/TenantSwitcher';
 
 export { getMenuIcon, type MenuIconKey } from './icons';
