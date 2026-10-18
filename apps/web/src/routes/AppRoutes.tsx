@@ -24,6 +24,13 @@ const FieldCaptionsPage = lazy(() =>
 const ConfirmArrivalPage = lazy(() =>
   import('../pages/Data/ConfirmArrivalPage').then((m) => ({ default: m.ConfirmArrivalPage })),
 );
+const CountryPage = lazy(() =>
+  import('../pages/File/CountryPage').then((m) => ({ default: m.CountryPage })),
+);
+const PortsPage = lazy(() =>
+  import('../pages/File/PortsPage').then((m) => ({ default: m.PortsPage })),
+);
+const DcPage = lazy(() => import('../pages/File/DcPage').then((m) => ({ default: m.DcPage })));
 const NotFoundPage = lazy(() =>
   import('../pages/NotFound/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
@@ -47,6 +54,9 @@ export function AppRoutes() {
           <Route path={PATHS.home} element={<HomePage />} />
           <Route path={PATHS.fieldCaptions} element={<FieldCaptionsPage />} />
           <Route path={PATHS.confirmArrival} element={<ConfirmArrivalPage />} />
+          <Route path={PATHS.country} element={<CountryPage />} />
+          <Route path={PATHS.ports} element={<PortsPage />} />
+          <Route path={PATHS.dc} element={<DcPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

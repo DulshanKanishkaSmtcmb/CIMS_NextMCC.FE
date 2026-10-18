@@ -61,6 +61,29 @@ export const MENU_STUB: readonly LegacyMenuRow[] = [
     menuController: 'Data',
     menuAction: 'ConfirmArrival',
   }),
+  // The File group uses the real CloudMenu ids and names of the three master-data pages ported in wave 1 (docs/15).
+  row({ menuId: '100', menuName: 'File', menuIsParent: true, menuImageClass: 'folder' }),
+  row({
+    menuId: '100.02',
+    menuName: 'Country',
+    menuParentId: '100',
+    menuController: 'File',
+    menuAction: 'Country',
+  }),
+  row({
+    menuId: '100.06',
+    menuName: 'Ports...',
+    menuParentId: '100',
+    menuController: 'File',
+    menuAction: 'Ports',
+  }),
+  row({
+    menuId: '100.08',
+    menuName: 'DC',
+    menuParentId: '100',
+    menuController: 'File',
+    menuAction: 'DC',
+  }),
   row({ menuId: '3', menuName: 'Reference', menuIsParent: true, menuImageClass: 'reference' }),
   row({
     menuId: '3.1',

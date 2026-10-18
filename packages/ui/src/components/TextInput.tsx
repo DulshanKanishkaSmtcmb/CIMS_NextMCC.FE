@@ -6,6 +6,8 @@ export interface TextInputProps {
   value: string;
   /** Omit for a read-only display field. */
   onChange?: (value: string) => void;
+  /** Called when the field loses focus (legacy `event: { blur: ... }`). */
+  onBlur?: () => void;
   /** Read-only: shown and selectable, not editable (legacy readonly="readonly" inputs). Default: true when onChange is omitted. */
   readOnly?: boolean;
   inputRef?: Ref<HTMLInputElement>;
@@ -30,6 +32,7 @@ export function TextInput({
   value,
   onChange,
   readOnly,
+  onBlur,
   inputRef,
   id,
   name,
@@ -47,6 +50,7 @@ export function TextInput({
       label={label}
       value={value}
       onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+      onBlur={onBlur}
       inputRef={inputRef}
       id={id}
       name={name}

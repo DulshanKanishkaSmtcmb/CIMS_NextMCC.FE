@@ -38,10 +38,11 @@ describe('buildNavigation', () => {
     expect(navigation.map((item) => ('title' in item ? item.title : ''))).toEqual([
       'Home',
       'Data',
+      'File',
       'Reference',
     ]);
 
-    const [home, data, reference] = navigation as Array<{
+    const [home, data, file, reference] = navigation as Array<{
       segment?: string;
       children?: Array<{ title?: string; segment?: string }>;
     }>;
@@ -49,6 +50,11 @@ describe('buildNavigation', () => {
     expect(data?.segment).toBeUndefined();
     expect(data?.children).toMatchObject([
       { title: 'Confirm Arrival', segment: 'Data/ConfirmArrival' },
+    ]);
+    expect(file?.children).toMatchObject([
+      { title: 'Country', segment: 'File/Country' },
+      { title: 'Ports...', segment: 'File/Ports' },
+      { title: 'DC', segment: 'File/DC' },
     ]);
     expect(reference?.children).toMatchObject([
       { title: 'Field Captions', segment: 'Reference/FieldCaptions' },

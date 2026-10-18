@@ -140,9 +140,50 @@ Entry format: purpose, what it wraps, key props, usage, tests.
 
 - **Purpose:** Plain typed text field, and read-only display boxes (legacy `readonly="readonly"` inputs). Scanner fields use `ScanInput`.
 - **Wraps:** `TextField`.
-- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `readOnly?`, `ariaLabel?` (when there is no visible label), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
+- **Key props:** `label`, `value`, `onChange?` (omit for read-only), `onBlur?`, `readOnly?`, `ariaLabel?` (when there is no visible label), `inputRef`, `id`, `name`, `placeholder`, `disabled`, `required`, `error`, `helperText`, `fullWidth` (default `true`).
 - **Usage:** `<TextInput ariaLabel="Country name" value={countryName} />`
 - **Tests:** `components/formFields.test.tsx`.
+
+### LookupField (status: available)
+
+- **Purpose:** Code field with a search button: the legacy "input + magnifier button + dialog with a DataTable" lookup (Country, Ports, DC pages). Pair it with `LookupDialog`.
+- **Wraps:** `TextField` with an `InputAdornment` and `IconButton` (Search icon).
+- **Key props:** `value` (the committed value), `onCommit(text)` (blur or Enter, only when the text changed; like a Knockout `value` binding, not every keystroke), `onEnter()` (after the commit; legacy `returnKey`), `onSearch()`, `readOnly`, `searchDisabled`, `id` (the legacy element id, e.g. `CountryCode`), `searchId` (the button id, e.g. `btnCountryCode`), `searchLabel`, `label`, `inputRef`, `name`, `disabled`, `fullWidth`.
+- **Behaviour:** a `value` set by the page (a dialog selection, a loaded record, New) replaces the typed text. A read-only field still searches unless `searchDisabled`.
+- **Usage:**
+  ```tsx
+  <LookupField
+    id="CountryCode"
+    searchId="btnCountryCode"
+    label="Country Code"
+    value={code}
+    readOnly={option !== 'New'}
+    onCommit={setCode}
+    onEnter={findByCode}
+    onSearch={openList}
+  />
+  ```
+- **Tests:** `components/lookup.test.tsx`.
+
+### LookupDialog (status: available)
+
+- **Purpose:** Modal list with a Select button on every row and a search box per column: the legacy `GetApiDataForDialogBox` / `LoadListDialog` (Bootstrap modal + DataTable).
+- **Wraps:** `Dialog`, `InventoryGrid`, `TextField` (the search boxes), `Button`.
+- **Key props:** `open`, `title` ("Countries Listing"), `columns: LookupColumn[]` (`field`, `headerName`, `kind?` = `text` | `number` | `boolean` | `date` | `dateTime`, `width?`), `rows`, `onSelect(row)` (the dialog does not close itself), `onClose`, `getRowId?`.
+- **Behaviour:** sorted by the first column, 10 rows per page (10/25/50/100; the legacy "All" is not offered, Community grid limit). `boolean` shows Yes/No, `date` dd/MM/yyyy, `dateTime` dd/MM/yyyy plus HH:mm unless it is midnight, `number` thousands separators and no decimals (legacy renderers). The search boxes match the displayed text anywhere in the cell, case-insensitively, and combine with AND. They sit above the grid and wrap (legacy: in the table footer).
+- **Helper:** `lookupCellText(value, kind)` (also exported) is the display text used by the grid and the search boxes.
+- **Usage:**
+  ```tsx
+  <LookupDialog
+    open
+    title="Ports Listing"
+    columns={PORT_COLUMNS}
+    rows={ports}
+    onSelect={pick}
+    onClose={close}
+  />
+  ```
+- **Tests:** `components/lookup.test.tsx`.
 
 ### BlockingOverlay (status: available)
 
@@ -196,4 +237,3 @@ Add these when a migrated page needs them. Build them here, not in the page.
 | FormSection            | Titled group of form fields with consistent spacing.                                                         |
 | EmptyState, ErrorState | Standard views for data screens (the grid has its own empty state).                                          |
 | StatusChip             | Canonical rendering of entity status.                                                                        |
-| LookupField            | Field with a search popup, replacing the legacy dialog-with-datatable pattern.                               |

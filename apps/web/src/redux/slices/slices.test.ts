@@ -67,6 +67,12 @@ describe('tenantSlice', () => {
 describe('store', () => {
   it('wires auth, tenant and the api slices', () => {
     const state = createAppStore().getState();
-    expect(Object.keys(state).sort()).toEqual(['arrivalsApi', 'auth', 'referenceApi', 'tenant']);
+    expect(Object.keys(state).sort()).toEqual([
+      'arrivalsApi',
+      'auth',
+      'masterDataApi',
+      'referenceApi',
+      'tenant',
+    ]);
   });
 });

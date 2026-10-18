@@ -7,4 +7,7 @@ export const PATHS = {
   home: '/Home/Index',
   fieldCaptions: '/Reference/FieldCaptions',
   confirmArrival: '/Data/ConfirmArrival',
+  country: '/File/Country',
+  ports: '/File/Ports',
+  dc: '/File/DC',
 } as const;

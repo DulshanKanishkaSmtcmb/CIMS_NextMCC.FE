@@ -26,6 +26,9 @@ export { SelectField, type SelectFieldProps, type SelectOption } from './compone
 export { TextInput, type TextInputProps } from './components/TextInput';
 export { BlockingOverlay, type BlockingOverlayProps } from './components/BlockingOverlay';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
+export { LookupField, type LookupFieldProps } from './components/LookupField';
+export { LookupDialog, type LookupColumn, type LookupDialogProps } from './components/LookupDialog';
+export { lookupCellText, type LookupColumnKind } from './components/lookupText';
 export { PageHeader, type PageHeaderProps } from './components/PageHeader';
 export { PageLoading, type PageLoadingProps } from './components/PageLoading';
 export { TenantSwitcher, type Tenant, type TenantSwitcherProps } from './components/TenantSwitcher';
